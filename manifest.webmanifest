@@ -1,0 +1,17 @@
+{
+  "name": "AI Affiliate Studio",
+  "short_name": "Affiliate Studio",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#101827",
+  "description": "Trợ lý lập kịch bản và quy trình video affiliate",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
