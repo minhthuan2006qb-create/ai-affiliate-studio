@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101827">
+<meta name="description" content="AI Affiliate Studio - lập kịch bản và quy trình video affiliate">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>AI Affiliate Studio</title>
+<style>
+:root{--bg:#0b1220;--panel:#121d2e;--panel2:#18263a;--line:#293950;--text:#eef4ff;--muted:#9fb0c7;--accent:#70e1b5;--accent2:#9bb7ff;--danger:#ff9c9c}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(160deg,#0b1220,#101b2c 65%,#0b1220);color:var(--text);font:15px system-ui,-apple-system,Segoe UI,sans-serif}
+header{padding:22px 18px 14px;position:sticky;top:0;background:#0b1220ee;backdrop-filter:blur(12px);z-index:5;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:11px}.logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#70e1b5,#9bb7ff);display:grid;place-items:center;color:#081321;font-weight:900;font-size:20px}
+h1{font-size:19px;margin:0}header p{margin:4px 0 0;color:var(--muted);font-size:12px}
+main{max-width:760px;margin:auto;padding:16px 14px 100px}.tabs{display:flex;gap:7px;overflow:auto;padding:3px 0 14px}.tab{border:1px solid var(--line);background:var(--panel);color:var(--muted);padding:9px 13px;border-radius:999px;white-space:nowrap}.tab.active{background:var(--accent);color:#07151a;border-color:var(--accent);font-weight:700}
+.card{background:linear-gradient(160deg,var(--panel),#101a2a);border:1px solid var(--line);border-radius:18px;padding:16px;margin:0 0 13px;box-shadow:0 12px 28px #0002}
+h2{font-size:17px;margin:0 0 12px}h3{font-size:14px;margin:14px 0 7px;color:var(--accent2)}
+label{display:block;color:var(--muted);font-size:12px;margin:11px 0 6px}input,textarea,select{width:100%;border:1px solid var(--line);background:#0b1524;color:var(--text);border-radius:11px;padding:12px;font:inherit;outline:none}textarea{min-height:76px;resize:vertical}input:focus,textarea:focus{border-color:var(--accent2)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.btn{border:0;border-radius:12px;background:var(--accent);color:#08151a;font-weight:800;padding:13px 15px;font:inherit;cursor:pointer}.btn.secondary{background:var(--panel2);border:1px solid var(--line);color:var(--text)}.btn.small{padding:8px 11px;font-size:12px}.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}.muted{color:var(--muted);font-size:12px;line-height:1.5}.pill{display:inline-block;padding:5px 8px;border-radius:8px;background:#20344a;color:var(--accent);font-size:11px;margin:3px 3px 3px 0}
+.output{white-space:pre-wrap;line-height:1.55;background:#0a1422;border:1px solid var(--line);border-radius:12px;padding:13px;font-size:13px;max-height:420px;overflow:auto}.scene{border:1px solid var(--line);border-radius:13px;padding:12px;margin:9px 0;background:#0d1828}.scene strong{color:var(--accent)}.hidden{display:none!important}.notice{border-left:3px solid #e9c46a;padding:9px 12px;background:#302a1b;color:#f6e8bd;border-radius:8px;font-size:12px;line-height:1.5}
+footer{position:fixed;bottom:0;left:0;right:0;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:#0b1220ed;border-top:1px solid var(--line);backdrop-filter:blur(12px);text-align:center;color:var(--muted);font-size:11px}
+@media(min-width:620px){main{padding-top:22px}.grid.wide{grid-template-columns:1fr 1fr 1fr}}
+</style>
+</head>
+<body>
+<header><div class="brand"><div class="logo">A</div><div><h1>AI Affiliate Studio</h1><p>Trợ lý sản xuất video affiliate · Bản thử nghiệm 02</p></div></div></header>
+<main>
+<nav class="tabs">
+<button class="tab active" data-tab="create">Tạo video</button><button class="tab" data-tab="projects">Dự án đã lưu</button><button class="tab" data-tab="guide">Hướng dẫn</button>
+</nav>
+<section id="create">
+<div class="card">
+<h2>01 · Thông tin sản phẩm</h2>
+<label>Tên sản phẩm *</label><input id="product" placeholder="Ví dụ: Lưới trùm thức ăn gấp gọn">
+<label>Link sản phẩm (không bắt buộc)</label><input id="url" placeholder="Dán link TikTok Shop...">
+<div class="grid">
+<div><label>Giá / ưu đãi</label><input id="price" placeholder="Ví dụ: 39.000đ"></div>
+<div><label>Thời lượng video</label><select id="duration"><option value="30">30 giây</option><option value="40" selected>40 giây</option><option value="50">50 giây</option></select></div>
+</div>
+<label>Công dụng / điểm nổi bật</label><textarea id="benefit" placeholder="Ví dụ: che bụi và côn trùng, gấp gọn, dễ vệ sinh..."></textarea>
+<label>Vấn đề khách hàng gặp phải</label><textarea id="problem" placeholder="Ví dụ: đồ ăn để trên bàn dễ bị ruồi bu..."></textarea>
+<label>Thông tin cần tránh nói sai (nếu có)</label><input id="caution" placeholder="Ví dụ: không khẳng định diệt khuẩn, không nói chống tuyệt đối">
+<div class="btnrow"><button class="btn" id="generate">Tạo kịch bản & storyboard</button><button class="btn secondary" id="clear">Xóa nội dung</button></div>
+<p class="muted">Bản miễn phí chạy trực tiếp trên máy, không gửi dữ liệu sản phẩm lên máy chủ.</p>
+</div>
+<div id="result" class="hidden">
+<div class="card"><h2>02 · Kịch bản video</h2><div id="script" class="output"></div><div class="btnrow"><button class="btn small" id="copyScript">Sao chép kịch bản</button><button class="btn secondary small" id="speak">Đọc thử giọng</button><button class="btn secondary small" id="stopSpeak">Dừng đọc</button></div></div>
+<div class="card"><h2>03 · Storyboard & prompt hoạt hình</h2><div id="storyboard"></div><div class="btnrow"><button class="btn small" id="copyPrompts">Sao chép prompt</button><button class="btn secondary small" id="save">Lưu dự án</button></div></div>
+<div class="card"><h2>04 · Thử tạo chuyển động AI miễn phí</h2>
+<p class="muted">App chuẩn bị prompt từ sản phẩm của bạn. Nhấn nút để mở thư viện video AI trên Hugging Face, chọn Space đang chạy và có nhãn ZeroGPU để thử tạo clip. Sau đó tải clip về và ghép với video sản phẩm thật.</p>
+<label>Prompt tiếng Anh dùng thử (có thể chỉnh sửa)</label><textarea id="freePrompt" rows="5" placeholder="Prompt sẽ xuất hiện sau khi tạo storyboard"></textarea>
+<div class="btnrow"><button class="btn small" id="copyFreePrompt">Sao chép prompt tiếng Anh</button><button class="btn secondary small" id="openFreeVideo">Mở công cụ video AI miễn phí</button></div>
+<p class="notice"><b>Giới hạn miễn phí:</b> Hugging Face ZeroGPU có quota miễn phí khoảng 5 phút GPU/ngày cho tài khoản miễn phí; hàng đợi và trạng thái từng Space thay đổi. Đây là nơi thử nghiệm, không phải dịch vụ tạo video không giới hạn. Một số Space có thể tạm dừng hoặc lỗi.</p>
+</div>
+<div class="card"><h2>05 · Caption và hashtag</h2><div id="caption" class="output"></div><div class="btnrow"><button class="btn small" id="copyCaption">Sao chép caption</button></div></div>
+</div>
+</section>
+<section id="projects" class="hidden"><div class="card"><h2>Dự án đã lưu trên thiết bị</h2><div id="projectList" class="muted">Chưa có dự án nào.</div></div></section>
+<section id="guide" class="hidden">
+<div class="card"><h2>Hướng dẫn sử dụng</h2>
+<p>1. Nhập thông tin thật của sản phẩm, đặc biệt là công dụng và giới hạn quảng cáo.</p>
+<p>2. Nhấn <b>Tạo kịch bản</b>. Ứng dụng tạo lời thoại, phân cảnh và prompt hoạt hình theo công thức: vấn đề → giải pháp → sản phẩm → lời kêu gọi.</p>
+<p>3. Dùng prompt để tạo cảnh hoạt hình bằng công cụ video AI mà bạn đang có. Quay hoặc tải video sản phẩm thật.</p>
+<p>4. Dùng kịch bản và storyboard làm bản dựng. Kiểm tra nội dung, giá và chính sách nền tảng trước khi đăng.</p>
+<div class="notice"><b>Giới hạn bản thử nghiệm 02:</b> phần tạo chuyển động mở các công cụ GPU miễn phí bên ngoài, chưa gọi API trực tiếp từ app. Hugging Face ZeroGPU có quota giới hạn (tài khoản miễn phí khoảng 5 phút GPU/ngày), có thể phải chờ hoặc gặp Space ngừng hoạt động. Bản này chưa tự ghép MP4 và chưa tự đăng TikTok.</div>
+</div>
+<div class="card"><h2>Cài lên màn hình chính</h2><p>Đưa bộ ứng dụng lên hosting HTTPS, mở bằng Chrome Android → menu ⋮ → <b>Thêm vào màn hình chính</b> hoặc <b>Cài đặt ứng dụng</b>.</p></div>
+</section>
+</main>
+<footer>AI Affiliate Studio · Lưu dữ liệu cục bộ trên thiết bị</footer>
+<script>
+const $=id=>document.getElementById(id);
+let latest=null;
+document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{
+ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+ ['create','projects','guide'].forEach(x=>$(x).classList.toggle('hidden',x!==b.dataset.tab));
+ if(b.dataset.tab==='projects')renderProjects();
+}));
+function clean(s){return (s||'').trim()}
+function generate(){
+ const p=clean($('product').value), benefit=clean($('benefit').value), problem=clean($('problem').value), price=clean($('price').value), caution=clean($('caution').value);
+ if(!p){alert('Bạn hãy nhập tên sản phẩm trước nhé.');return}
+ const issue=problem||'Bạn có từng gặp bất tiện này trong sinh hoạt hằng ngày?';
+ const use=benefit||'Sản phẩm được thiết kế để hỗ trợ công việc này thuận tiện hơn.';
+ const dur=Number($('duration').value);
+ const scenes=[
+  {t:'0–5 giây · Hook hoạt hình',v:`Một tình huống đời thường thể hiện vấn đề: ${issue} Nhân vật phản ứng tự nhiên, biểu cảm rõ, nhịp nhanh, không chữ trên hình.`,a:`“${issue}”`},
+  {t:'5–13 giây · Đẩy vấn đề',v:'Cận cảnh hậu quả/bất tiện, nhân vật tìm cách xử lý. Bối cảnh gia đình Việt Nam, hình ảnh sạch, ánh sáng tự nhiên.',a:'“Nhiều khi chỉ một chuyện nhỏ cũng khiến chúng ta mất thời gian.”'},
+  {t:'13–20 giây · Giới thiệu giải pháp',v:`Chuyển cảnh mượt sang sản phẩm ${p}, hình ảnh sản phẩm rõ ràng, không tự thêm chi tiết thiết kế.`,a:`“Đây là ${p}, một lựa chọn có thể giúp bạn xử lý việc đó gọn gàng hơn.”`},
+  {t:'20–'+(dur-6)+' giây · Demo sản phẩm thật',v:'Dùng video quay thật: toàn cảnh sản phẩm, thao tác sử dụng, cận cảnh chất liệu/cấu tạo và kết quả thực tế.',a:`“${use}”`},
+  {t:(dur-6)+'–'+dur+' giây · CTA',v:'Khung hình sản phẩm rõ, bố cục gọn, chừa khoảng trống cho phụ đề/giỏ hàng.',a:price?`“Bạn có thể xem thông tin và giá ${price} ở giỏ hàng nhé.”`:'“Bạn có thể xem thông tin sản phẩm ở giỏ hàng nhé.”'}
+ ];
+ const voice=scenes.map(x=>x.a).join(' ');
+ const script=`SẢN PHẨM: ${p}\\nTHỜI LƯỢNG: ${dur} giây\\n\\nLỜI THOẠI:\\n${voice}\\n\\nLƯU Ý KIỂM DUYỆT: ${caution||'Chỉ nêu công dụng có thể kiểm chứng; không phóng đại hoặc cam kết tuyệt đối.'}`;
+ latest={product:p,url:clean($('url').value),price,benefit,problem,caution,duration:dur,scenes,script,created:new Date().toISOString()};
+ $('script').textContent=script;
+ $('storyboard').innerHTML=scenes.map((s,i)=>`<div class="scene"><strong>${s.t}</strong><p>${s.v}</p><span class="pill">Lời thoại</span><p>“${s.a}”</p></div>`).join('');
+ $('caption').textContent=`Một giải pháp nhỏ giúp việc nhà thuận tiện hơn. ${p}${price?' · '+price:''}\\n\\n#dogiadung #meovatgiadinh #tiktokshop #affiliate #${p.replace(/[^a-zA-Z0-9]/g,'')}`;
+ $('freePrompt').value=`A short vertical 9:16 stylized 3D animated scene for a Vietnamese household product advertisement. In a warm Vietnamese family kitchen, show this everyday problem: ${issue}. A relatable character notices the problem and reacts with clear expressive body language. Smooth coherent motion, natural cinematic lighting, appealing family-friendly cartoon style. No text, no subtitles, no logos, no watermark. Product context: ${p}.`;
+ $('result').classList.remove('hidden');$('result').scrollIntoView({behavior:'smooth',block:'start'});
+}
+$('generate').onclick=generate;
+$('clear').onclick=()=>{['product','url','price','benefit','problem','caution'].forEach(x=>$(x).value='');$('result').classList.add('hidden');latest=null};
+$('copyScript').onclick=()=>copy(latest?.script||'');
+$('copyPrompts').onclick=()=>copy((latest?.scenes||[]).slice(0,2).map(s=>s.v).join('\\n\\n'));
+$('copyFreePrompt').onclick=()=>copy($('freePrompt').value);
+$('openFreeVideo').onclick=()=>window.open('https://huggingface.co/spaces?category=video-generation&includeNonRunning=true&p=0&sort=likes','_blank','noopener');
+$('copyCaption').onclick=()=>copy($('caption').textContent);
+function copy(t){if(navigator.clipboard?.writeText)navigator.clipboard.writeText(t).then(()=>alert('Đã sao chép.')).catch(()=>fallback(t));else fallback(t)}
+function fallback(t){const a=document.createElement('textarea');a.value=t;document.body.append(a);a.select();document.execCommand('copy');a.remove();alert('Đã sao chép.')}
+$('speak').onclick=()=>{if(!latest)return; speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(latest.scenes.map(x=>x.a).join(' '));u.lang='vi-VN';u.rate=1;speechSynthesis.speak(u)};
+$('stopSpeak').onclick=()=>speechSynthesis.cancel();
+$('save').onclick=()=>{if(!latest)return;let a=JSON.parse(localStorage.getItem('affProjects')||'[]');a.unshift(latest);localStorage.setItem('affProjects',JSON.stringify(a.slice(0,30)));alert('Đã lưu trên thiết bị này.')};
+function renderProjects(){let a=JSON.parse(localStorage.getItem('affProjects')||'[]');$('projectList').innerHTML=a.length?a.map((x,i)=>`<div class="scene"><b>${esc(x.product)}</b><p class="muted">${new Date(x.created).toLocaleString('vi-VN')} · ${x.duration}s</p><button class="btn secondary small" onclick="loadProject(${i})">Mở lại</button> <button class="btn secondary small" onclick="deleteProject(${i})">Xóa</button></div>`).join(''):'Chưa có dự án nào.'}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+window.loadProject=i=>{let x=JSON.parse(localStorage.getItem('affProjects')||'[]')[i];['product','url','price','benefit','problem','caution'].forEach(k=>$(k).value=x[k]||'');$('duration').value=x.duration;latest=x;generate();document.querySelector('[data-tab="create"]').click()};
+window.deleteProject=i=>{let a=JSON.parse(localStorage.getItem('affProjects')||'[]');a.splice(i,1);localStorage.setItem('affProjects',JSON.stringify(a));renderProjects()};
+if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+</script>
+</body></html>
