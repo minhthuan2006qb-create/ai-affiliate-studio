@@ -128,7 +128,7 @@ def create_job(payload: CreateVideoJob, _: None = Depends(require_api_key)) -> J
     return JobAccepted(
         job_id=job_id,
         status="queued",
-        message="Đã nhận yêu cầu. Worker render sẽ xử lý ở bước triển khai tiếp theo.",
+        message="Đã nhận yêu cầu. Worker sẽ tạo video MP4 khi được khởi chạy.",
     )
 
 
