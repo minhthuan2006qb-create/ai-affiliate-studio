@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import os
 import sqlite3
 import subprocess
 import time
 from pathlib import Path
+from collections.abc import Iterator
 from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
@@ -25,11 +27,16 @@ def output_dir() -> Path:
     return Path(os.getenv("OUTPUT_DIR", str(DEFAULT_OUTPUT_DIR)))
 
 
-def connect_db(path: Path) -> sqlite3.Connection:
+@contextmanager
+def connect_db(path: Path) -> Iterator[sqlite3.Connection]:
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path, timeout=15)
     connection.row_factory = sqlite3.Row
-    return connection
+    try:
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 def ensure_schema(path: Path) -> None:
