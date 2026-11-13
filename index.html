@@ -55,6 +55,16 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 14px calc(10px + env(
 <p class="notice"><b>Giới hạn miễn phí:</b> Hugging Face ZeroGPU có quota miễn phí khoảng 5 phút GPU/ngày cho tài khoản miễn phí; hàng đợi và trạng thái từng Space thay đổi. Đây là nơi thử nghiệm, không phải dịch vụ tạo video không giới hạn. Một số Space có thể tạm dừng hoặc lỗi.</p>
 </div>
 <div class="card"><h2>05 · Caption và hashtag</h2><div id="caption" class="output"></div><div class="btnrow"><button class="btn small" id="copyCaption">Sao chép caption</button></div></div>
+<div class="card">
+<h2>06 · Render video MP4</h2>
+<p class="muted">Gửi kịch bản lên backend để tạo MP4 dọc 9:16. Backend và worker FFmpeg phải được triển khai trước. Đây là video motion graphic từ chữ, chưa có giọng đọc hoặc cảnh AI tạo sinh.</p>
+<label>Địa chỉ Backend API</label><input id="apiBase" type="url" placeholder="https://ten-backend-cua-ban.example">
+<label>API key</label><input id="apiKey" type="password" autocomplete="off" placeholder="Nhập API key của backend">
+<div class="btnrow"><button class="btn" id="renderMp4">Bắt đầu tạo MP4</button></div>
+<div id="renderStatus" class="output">Chưa gửi yêu cầu tạo video.</div>
+<a id="downloadMp4" class="btn small hidden" href="#" download="ai-affiliate-video.mp4">Tải video MP4</a>
+<p class="muted">API key chỉ được giữ trong bộ nhớ trang hiện tại, không lưu vào localStorage. Chỉ nhập key trên thiết bị cá nhân và dùng backend HTTPS.</p>
+</div>
 </div>
 </section>
 <section id="projects" class="hidden"><div class="card"><h2>Dự án đã lưu trên thiết bị</h2><div id="projectList" class="muted">Chưa có dự án nào.</div></div></section>
@@ -117,6 +127,47 @@ function renderProjects(){let a=JSON.parse(localStorage.getItem('affProjects')||
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 window.loadProject=i=>{let x=JSON.parse(localStorage.getItem('affProjects')||'[]')[i];['product','url','price','benefit','problem','caution'].forEach(k=>$(k).value=x[k]||'');$('duration').value=x.duration;latest=x;generate();document.querySelector('[data-tab="create"]').click()};
 window.deleteProject=i=>{let a=JSON.parse(localStorage.getItem('affProjects')||'[]');a.splice(i,1);localStorage.setItem('affProjects',JSON.stringify(a));renderProjects()};
+$('renderMp4').onclick=renderMp4;
+async function renderMp4(){
+ const base=clean($('apiBase').value).replace(/\\/+$/,'');
+ const key=clean($('apiKey').value);
+ if(!latest){alert('Hãy tạo kịch bản trước.');return}
+ if(!base||!key){alert('Nhập địa chỉ Backend API và API key trước nhé.');return}
+ const button=$('renderMp4'), status=$('renderStatus'), link=$('downloadMp4');
+ button.disabled=true;link.classList.add('hidden');status.textContent='Đang gửi yêu cầu...';
+ const headers={'Content-Type':'application/json','Authorization':'Bearer '+key};
+ try{
+  const created=await fetch(base+'/v1/jobs',{method:'POST',headers,body:JSON.stringify({
+   product_name:latest.product,
+   product_benefits:latest.benefit||'Thiết kế tiện dụng, hỗ trợ công việc hằng ngày.',
+   problem:latest.problem||'Bạn đang gặp bất tiện trong sinh hoạt hằng ngày?',
+   call_to_action:'Xem sản phẩm ở giỏ hàng',
+   duration_seconds:latest.duration,
+   aspect_ratio:'9:16',
+   product_url:latest.url||null
+  })});
+  if(!created.ok)throw new Error('Không tạo được job ('+created.status+'): '+(await created.text()).slice(0,300));
+  const job=await created.json();status.textContent='Đã nhận job '+job.job_id+' · Đang chờ worker...';
+  const started=Date.now();let complete=false;
+  while(Date.now()-started<10*60*1000){
+   await new Promise(resolve=>setTimeout(resolve,3000));
+   const response=await fetch(base+'/v1/jobs/'+encodeURIComponent(job.job_id),{headers:{'Authorization':'Bearer '+key}});
+   if(!response.ok)throw new Error('Không đọc được trạng thái job ('+response.status+').');
+   const state=await response.json();
+   status.textContent='Job '+job.job_id+' · Trạng thái: '+state.status;
+   if(state.status==='failed')throw new Error(state.error||'Worker tạo video thất bại.');
+   if(state.status==='completed'&&state.output_url){
+    const file=await fetch(base+state.output_url,{headers:{'Authorization':'Bearer '+key}});
+    if(!file.ok)throw new Error('Tải MP4 thất bại ('+file.status+').');
+    const blob=await file.blob(), objectUrl=URL.createObjectURL(blob);
+    link.href=objectUrl;link.download='ai-affiliate-'+job.job_id+'.mp4';link.classList.remove('hidden');
+    status.textContent='Hoàn tất! Video MP4 đã sẵn sàng để tải xuống.';complete=true;break;
+   }
+  }
+  if(!complete)throw new Error('Đã chờ 10 phút nhưng job chưa hoàn tất. Bạn có thể kiểm tra lại trạng thái trên backend.');
+ }catch(error){status.textContent='Có lỗi: '+error.message}
+ finally{button.disabled=false}
+}
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
 </script>
 </body></html>
