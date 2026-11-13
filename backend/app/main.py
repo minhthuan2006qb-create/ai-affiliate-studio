@@ -10,11 +10,13 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, HttpUrl
 
 APP_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.getenv("DATABASE_PATH", str(APP_DIR.parent / "data" / "jobs.sqlite3")))
+OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", str(APP_DIR.parent / "output"))).resolve()
 API_KEY = os.getenv("API_KEY", "")
 ALLOWED_ORIGINS = [
     item.strip()
@@ -144,6 +146,22 @@ def get_job(job_id: str, _: None = Depends(require_api_key)) -> JobStatus:
         status=row["status"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
-        output_url=None,
+        output_url=f"/v1/jobs/{job_id}/download" if row["status"] == "completed" and row["output_path"] else None,
         error=row["error"],
     )
+
+
+@app.get("/v1/jobs/{job_id}/download")
+def download_job(job_id: str, _: None = Depends(require_api_key)) -> FileResponse:
+    with db_connection() as connection:
+        row = connection.execute(
+            "SELECT status, output_path FROM jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tác vụ.")
+    if row["status"] != "completed" or not row["output_path"]:
+        raise HTTPException(status_code=409, detail="Video chưa được tạo xong.")
+    output_path = Path(row["output_path"]).resolve()
+    if OUTPUT_DIR not in output_path.parents or not output_path.is_file():
+        raise HTTPException(status_code=404, detail="Không tìm thấy tệp video.")
+    return FileResponse(output_path, media_type="video/mp4", filename=f"{job_id}.mp4")
