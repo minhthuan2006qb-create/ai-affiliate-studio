@@ -6,7 +6,6 @@ import os
 import sqlite3
 import subprocess
 import time
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -184,10 +183,9 @@ def render_video(payload: dict[str, Any], destination: Path, ffmpeg_bin: str = "
     filters: list[str] = []
     for index, (scene_path, seconds) in enumerate(zip(scene_paths, durations)):
         inputs.extend(["-loop", "1", "-framerate", str(FPS), "-t", str(seconds), "-i", str(scene_path)])
-        frames = seconds * FPS
         filters.append(
             f"[{index}:v]scale={WIDTH}:{HEIGHT},"
-            f"zoompan=z='min(zoom+0.0005,1.035)':d={frames}:s={WIDTH}x{HEIGHT}:fps={FPS},"
+            f"zoompan=z='min(zoom+0.0005,1.035)':d=1:s={WIDTH}x{HEIGHT}:fps={FPS},"
             f"setsar=1[v{index}]"
         )
     concat_inputs = "".join(f"[v{i}]" for i in range(len(scene_paths)))
