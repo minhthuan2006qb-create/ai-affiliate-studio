@@ -43,7 +43,7 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 14px calc(10px + env(
 <label>Vấn đề khách hàng gặp phải</label><textarea id="problem" placeholder="Ví dụ: đồ ăn để trên bàn dễ bị ruồi bu..."></textarea>
 <label>Thông tin cần tránh nói sai (nếu có)</label><input id="caution" placeholder="Ví dụ: không khẳng định diệt khuẩn, không nói chống tuyệt đối">
 <div class="btnrow"><button class="btn" id="generate">Tạo kịch bản & storyboard</button><button class="btn secondary" id="clear">Xóa nội dung</button></div>
-<p class="muted">Bản miễn phí chạy trực tiếp trên máy, không gửi dữ liệu sản phẩm lên máy chủ.</p>
+<p class="muted">Kịch bản và storyboard được tạo ngay trên thiết bị. Thông tin sản phẩm chỉ được gửi lên backend khi bạn chủ động bấm Bắt đầu tạo MP4.</p>
 </div>
 <div id="result" class="hidden">
 <div class="card"><h2>02 · Kịch bản video</h2><div id="script" class="output"></div><div class="btnrow"><button class="btn small" id="copyScript">Sao chép kịch bản</button><button class="btn secondary small" id="speak">Đọc thử giọng</button><button class="btn secondary small" id="stopSpeak">Dừng đọc</button></div></div>
@@ -73,8 +73,8 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 14px calc(10px + env(
 <p>1. Nhập thông tin thật của sản phẩm, đặc biệt là công dụng và giới hạn quảng cáo.</p>
 <p>2. Nhấn <b>Tạo kịch bản</b>. Ứng dụng tạo lời thoại, phân cảnh và prompt hoạt hình theo công thức: vấn đề → giải pháp → sản phẩm → lời kêu gọi.</p>
 <p>3. Dùng prompt để tạo cảnh hoạt hình bằng công cụ video AI mà bạn đang có. Quay hoặc tải video sản phẩm thật.</p>
-<p>4. Dùng kịch bản và storyboard làm bản dựng. Kiểm tra nội dung, giá và chính sách nền tảng trước khi đăng.</p>
-<div class="notice"><b>Giới hạn bản thử nghiệm 02:</b> phần tạo chuyển động mở các công cụ GPU miễn phí bên ngoài, chưa gọi API trực tiếp từ app. Hugging Face ZeroGPU có quota giới hạn (tài khoản miễn phí khoảng 5 phút GPU/ngày), có thể phải chờ hoặc gặp Space ngừng hoạt động. Bản này chưa tự ghép MP4 và chưa tự đăng TikTok.</div>
+<p>4. Khi backend đã được triển khai, nhập API URL và API key ở mục Render video MP4, sau đó gửi job để tạo và tải video. Bản render hiện tại dùng chữ và motion graphic, chưa chèn video sản phẩm thật hoặc giọng đọc.</p>
+<div class="notice"><b>Giới hạn bản thử nghiệm:</b> chức năng render MP4 đã có trong mã nguồn nhưng cần triển khai API và worker trước khi sử dụng. Video hiện là motion graphic 9:16 gồm ba cảnh, chưa có TTS, footage sản phẩm hoặc cảnh AI tạo sinh. Công cụ video AI bên ngoài vẫn có quota và có thể phải chờ. App chưa tự đăng TikTok.</div>
 </div>
 <div class="card"><h2>Cài lên màn hình chính</h2><p>Đưa bộ ứng dụng lên hosting HTTPS, mở bằng Chrome Android → menu ⋮ → <b>Thêm vào màn hình chính</b> hoặc <b>Cài đặt ứng dụng</b>.</p></div>
 </section>
