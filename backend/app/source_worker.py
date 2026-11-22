@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .content_processor import process_unprocessed
+from .ai_writer import rewrite_pending
 from urllib.parse import urlsplit
 
 import httpx
@@ -225,7 +226,8 @@ def main() -> None:
     while True:
         results = poll_all()
         processed = process_unprocessed()
-        print({"checked": len(results), "results": results, "processed": processed}, flush=True)
+        rewritten = rewrite_pending()
+        print({"checked": len(results), "results": results, "processed": processed, "rewritten": rewritten}, flush=True)
         if args.once:
             break
         time.sleep(args.interval_minutes * 60)
