@@ -2,7 +2,7 @@ name: Backend checks
 
 on:
   push:
-    branches: [rebuild/video-studio-v2]
+    branches: [rebuild/video-studio-v2, feature/facebook-hub-v1]
     paths:
       - "backend/**"
       - ".github/workflows/backend.yml"
