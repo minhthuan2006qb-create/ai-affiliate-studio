@@ -24,11 +24,15 @@ ALLOWED_ORIGINS = [
     if item.strip()
 ]
 
+from .facebook_hub import router as facebook_hub_router
+
 app = FastAPI(
     title="AI Affiliate Studio API",
     version="0.1.0",
     description="Job API for producing short-form affiliate videos.",
 )
+
+app.include_router(facebook_hub_router)
 
 app.add_middleware(
     CORSMiddleware,
