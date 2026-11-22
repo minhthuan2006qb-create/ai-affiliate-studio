@@ -169,3 +169,27 @@ def download_job(job_id: str, _: None = Depends(require_api_key)) -> FileRespons
     if OUTPUT_DIR not in output_path.parents or not output_path.is_file():
         raise HTTPException(status_code=404, detail="Không tìm thấy tệp video.")
     return FileResponse(output_path, media_type="video/mp4", filename=f"{job_id}.mp4")
+
+
+@app.get("/api/facebook-hub/items", dependencies=[Depends(require_hub_key)])
+def list_source_items(page_id: str | None = None, limit: int = 50):
+    if limit < 1 or limit > 100:
+        raise HTTPException(422, "limit phải từ 1 đến 100.")
+    from .facebook_hub import connect as hub_connect
+    with hub_connect() as connection:
+        if page_id:
+            rows = connection.execute("""
+                SELECT i.*, s.name AS source_name
+                FROM fb_source_items i
+                JOIN fb_sources s ON s.id=i.source_id
+                JOIN fb_page_sources ps ON ps.source_id=s.id
+                WHERE ps.page_id=?
+                ORDER BY i.first_seen_at DESC LIMIT ?
+            """, (page_id, limit)).fetchall()
+        else:
+            rows = connection.execute("""
+                SELECT i.*, s.name AS source_name
+                FROM fb_source_items i JOIN fb_sources s ON s.id=i.source_id
+                ORDER BY i.first_seen_at DESC LIMIT ?
+            """, (limit,)).fetchall()
+    return {"items": [dict(row) for row in rows]}
