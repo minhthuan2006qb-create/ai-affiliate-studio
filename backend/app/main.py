@@ -24,7 +24,7 @@ ALLOWED_ORIGINS = [
     if item.strip()
 ]
 
-from .facebook_hub import router as facebook_hub_router
+from .facebook_hub import router as facebook_hub_router, require_hub_key, connect as hub_connect
 
 app = FastAPI(
     title="AI Affiliate Studio API",
@@ -175,7 +175,6 @@ def download_job(job_id: str, _: None = Depends(require_api_key)) -> FileRespons
 def list_source_items(page_id: str | None = None, limit: int = 50):
     if limit < 1 or limit > 100:
         raise HTTPException(422, "limit phải từ 1 đến 100.")
-    from .facebook_hub import connect as hub_connect
     with hub_connect() as connection:
         if page_id:
             rows = connection.execute("""
