@@ -144,7 +144,36 @@ def process_item(item_id: str) -> dict[str, object]:
                 continue
             matched = collect_candidates(conn, {**dict(item), "page_id": page["id"]})
             score, hosts, rationale = preliminary_signal(item, matched)
-            draft_id = create_candidate_draft(conn, item, page["id"], score, hosts, rationale)
+            matched_ids = [row["id"] for row in matched]
+            existing = None
+            if matched_ids:
+                marks = ",".join("?" for _ in matched_ids)
+                existing = conn.execute(
+                    f"""SELECT x.draft_id FROM fb_item_processing x
+                        WHERE x.page_id=? AND x.draft_id IS NOT NULL
+                          AND x.item_id IN ({marks}) ORDER BY x.created_at LIMIT 1""",
+                    [page["id"], *matched_ids],
+                ).fetchone()
+            if existing and existing["draft_id"]:
+                draft_id = existing["draft_id"]
+                draft = conn.execute("SELECT body, review_status FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
+                if draft:
+                    sources = [f"{row['source_name']} ({row['item_url']})" for row in matched]
+                    sources.append(f"{item['source_name']} ({item['item_url']})")
+                    body = draft["body"]
+                    for source in sources:
+                        if source not in body:
+                            body += f"\\nNguồn đối chiếu bổ sung: {source}."
+                    status = draft["review_status"]
+                    if status in {"pending", "held"}:
+                        status = "pending" if score >= 70 else "held"
+                    conn.execute(
+                        """UPDATE fb_drafts SET body=?, confidence=?, review_status=?,
+                           review_reason=?, updated_at=? WHERE id=?""",
+                        (body, score, status, rationale, now(), draft_id),
+                    )
+            else:
+                draft_id = create_candidate_draft(conn, item, page["id"], score, hosts, rationale)
             record_id = hashlib.sha256(f"process:{item_id}:{page['id']}".encode()).hexdigest()
             conn.execute("""
               INSERT OR IGNORE INTO fb_item_processing
