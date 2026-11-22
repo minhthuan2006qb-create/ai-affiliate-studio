@@ -93,3 +93,17 @@ Basic safety limits: HTTP(S) only, no URL credentials, reject non-public IP dest
 
 
 Operational note: The API and RSS worker must share the same persistent SQLite file. If `FACEBOOK_HUB_DB` is set, configure it identically for both processes; otherwise both use `DATABASE_PATH`. The RSS worker is a separate long-running process and is not started by the API container automatically.
+
+
+## RSS candidate triage (preliminary only)
+
+The RSS worker also sends newly discovered items through `app.content_processor`. It creates one candidate draft per assigned Page and records a preliminary metadata-coverage signal based on matching titles across distinct hostnames within 72 hours. Low-signal candidates are held; higher-signal candidates enter the pending queue. This is **not AI fact-checking**: hostnames may share ownership, syndicate the same story, or repeat incorrect information. Drafts explicitly state that they are unverified and are never auto-published by this worker.
+
+The processor can also be run separately:
+
+```bash
+cd backend
+python -m app.content_processor --once
+```
+
+The RSS and triage worker remain separate from the Video Studio render worker. No paid AI provider is required for this preliminary intake stage.
