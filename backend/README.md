@@ -57,3 +57,22 @@ The image installs FFmpeg and Noto fonts. It starts the API by default. Run the 
 - Do not deploy publicly until HTTPS, a strong API key, restrictive CORS, persistent storage, rate limits, and worker isolation/timeouts are configured.
 - Mount persistent storage for both the database and rendered output.
 - GitHub Pages remains the static frontend; this API and FFmpeg worker run separately.
+
+
+## Facebook Hub V1 API
+
+The Facebook Hub is mounted in the same FastAPI service as the Video Studio API. It uses the same `API_KEY` by default; optionally set `FACEBOOK_HUB_API_KEY` for a separate key and `FACEBOOK_HUB_DB` for a separate SQLite file. If no separate database is configured, Hub tables share the configured `DATABASE_PATH` file without sharing tables.
+
+Management UI: `/facebook-hub.html` (static frontend).
+
+Current endpoints (all require `Authorization: Bearer <key>`):
+- `GET /api/facebook-hub/dashboard`
+- `POST /api/facebook-hub/pages`, `PATCH /api/facebook-hub/pages/{id}`, `DELETE /api/facebook-hub/pages/{id}`
+- `POST /api/facebook-hub/sources`, `DELETE /api/facebook-hub/sources/{id}`
+- `POST /api/facebook-hub/pages/{page_id}/sources/{source_id}`
+- `GET /api/facebook-hub/pages/{page_id}/sources`
+- `DELETE /api/facebook-hub/pages/{page_id}/sources/{source_id}`
+- `POST /api/facebook-hub/drafts`, `GET /api/facebook-hub/drafts`
+- `PATCH /api/facebook-hub/drafts/{id}/review`
+
+Drafts with confidence below 70 are automatically placed in `held`; scores 70 and above enter `pending` for review. This score is only an intake rule, not an AI fact-check. No source polling, AI verification, Meta OAuth, Facebook publishing, or affiliate click tracking is active yet. Auto-publishing is intentionally blocked until a Page has a verified Meta connection.
