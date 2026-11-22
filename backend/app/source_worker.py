@@ -176,7 +176,8 @@ def poll_source(source_id: str, path: Path | None = None, fetcher=fetch_feed) ->
             items = parse_feed(raw, source["url"])
             inserted = 0
             for item in items:
-                key = hashlib.sha256(item["url"].encode("utf-8")).hexdigest()\n                item_id = hashlib.sha256(f"{source_id}:{key}".encode("utf-8")).hexdigest()
+                key = hashlib.sha256(item["url"].encode("utf-8")).hexdigest()
+                item_id = hashlib.sha256(f"{source_id}:{key}".encode("utf-8")).hexdigest()
                 cur = conn.execute(
                     """INSERT OR IGNORE INTO fb_source_items
                     (id,source_id,item_key,title,item_url,summary,published_at,first_seen_at)
