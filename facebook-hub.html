@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101827"><title>Facebook Hub V1 · AI Affiliate Studio</title>
+<style>
+:root{--bg:#0b1220;--panel:#121d2e;--line:#293950;--text:#eef4ff;--muted:#9fb0c7;--accent:#70e1b5;--warn:#e9c46a;--danger:#ff9c9c}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(160deg,#0b1220,#101b2c 65%,#0b1220);color:var(--text);font:15px system-ui,sans-serif}
+header{padding:18px;background:#0b1220ee;border-bottom:1px solid var(--line);position:sticky;top:0}main{max-width:900px;margin:auto;padding:16px 14px 60px}
+a{color:var(--accent)}h1{font-size:20px;margin:0}h2{font-size:16px;margin:0 0 12px}.muted{color:var(--muted);font-size:12px;line-height:1.5}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:15px;margin-bottom:13px}
+label{display:block;color:var(--muted);font-size:12px;margin:10px 0 5px}input,select,textarea{width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:#0b1524;color:var(--text);font:inherit}
+textarea{min-height:100px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.btn{border:0;border-radius:10px;padding:10px 13px;background:var(--accent);color:#08151a;font-weight:700;cursor:pointer}.btn.alt{background:#20344a;color:var(--text);border:1px solid var(--line)}.btn.danger{background:#4a252b;color:#ffd9dc}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.stat{font-size:24px;font-weight:800}.item{padding:12px;border:1px solid var(--line);border-radius:12px;margin-top:9px;background:#0d1828}.tag{font-size:11px;padding:4px 7px;border-radius:7px;background:#20344a;color:var(--accent);display:inline-block}
+#message{margin:10px 0;padding:10px;border-radius:9px;background:#17263a;color:var(--muted);font-size:13px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Facebook Hub V1</h1><p class="muted">Quản lý Page · Nguồn tin · Bản nháp · Kiểm duyệt</p><a href="./index.html">← Quay lại Video Studio</a></header>
+<main>
+<section class="card"><h2>Kết nối backend</h2><div class="grid"><div><label>Backend API URL</label><input id="api" placeholder="https://your-api.example"></div><div><label>API key</label><input id="key" type="password" autocomplete="off" placeholder="API key"></div></div><div class="row"><button class="btn" id="connect">Kết nối / Làm mới</button></div><p class="muted">API key chỉ nằm trong bộ nhớ trang hiện tại. Dùng HTTPS và không nhập mật khẩu Facebook hoặc access token vào đây.</p><div id="message">Chưa kết nối.</div></section>
+<section class="grid">
+<div class="card"><div class="muted">Facebook Pages</div><div class="stat" id="pageCount">—</div></div>
+<div class="card"><div class="muted">Nguồn tin</div><div class="stat" id="sourceCount">—</div></div>
+<div class="card"><div class="muted">Bản nháp chờ duyệt</div><div class="stat" id="pendingCount">—</div></div>
+<div class="card"><div class="muted">Bài đang giữ lại</div><div class="stat" id="heldCount">—</div></div>
+</section>
+<section class="card"><h2>Quản lý Facebook Page</h2><label>Tên Page</label><input id="pageName" placeholder="Ví dụ: Tin tức Đà Nẵng"><label>Meta Page ID (nếu đã biết)</label><input id="metaPageId" placeholder="Có thể để trống"><div class="row"><button class="btn" id="addPage">Thêm Page</button></div><div id="pages"></div></section>
+<section class="card"><h2>Quản lý nguồn tin</h2><label>Tên nguồn</label><input id="sourceName" placeholder="Tên trang / website / nguồn RSS"><div class="grid"><div><label>Loại nguồn</label><select id="sourceType"><option value="rss">RSS</option><option value="website">Website</option><option value="authorized_api">API được cấp quyền</option><option value="manual">Nhập thủ công</option></select></div><div><label>URL nguồn</label><input id="sourceUrl" placeholder="https://..."></div></div><div class="row"><button class="btn" id="addSource">Thêm nguồn</button></div><div id="sources"></div></section>
+<section class="card"><h2>Gán nguồn cho Page</h2><div class="grid"><div><label>Page</label><select id="assignPage"></select></div><div><label>Nguồn</label><select id="assignSource"></select></div></div><div class="row"><button class="btn" id="assign">Gán nguồn</button></div></section>
+<section class="card"><h2>Hộp kiểm duyệt bài viết</h2><p class="muted">Ngưỡng hiện tại: confidence từ 70 trở lên đưa vào chờ duyệt; dưới 70 tự giữ lại. Đây mới là luồng quản trị bản nháp, chưa tự động xác minh nguồn hoặc đăng lên Facebook.</p><div id="drafts"></div></section>
+<section class="card"><h2>Nhật ký hoạt động</h2><div id="activity"></div></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);let pages=[],sources=[];
+function base(){return $('api').value.trim().replace(/\/+$/,'')}
+function headers(){return {'Authorization':'Bearer '+$('key').value.trim(),'Content-Type':'application/json'}}
+async function request(path,opts={}){if(!base()||!$('key').value.trim())throw Error('Nhập API URL và API key trước.');const r=await fetch(base()+path,{...opts,headers:{...headers(),...(opts.headers||{})}});let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.detail||'API error '+r.status);return d}
+function msg(t,bad=false){$('message').textContent=t;$('message').style.color=bad?'#ff9c9c':'#9fb0c7'}
+async function refresh(){const d=await request('/api/facebook-hub/dashboard');pages=d.pages||[];sources=d.sources||[];$('pageCount').textContent=d.page_count;$('sourceCount').textContent=d.source_count;$('pendingCount').textContent=d.pending_count;$('heldCount').textContent=d.held_count;
+$('pages').innerHTML=pages.map(p=>'<div class="item"><b>'+esc(p.name)+'</b><p class="muted">Kết nối: '+esc(p.connection_status)+' · '+(p.enabled?'Đang bật':'Tạm dừng')+' · Tự đăng: '+(p.auto_publish?'Bật':'Tắt')+'</p><div class="row"><button class="btn alt" onclick="togglePage(\''+p.id+'\','+(!p.enabled)+')">'+(p.enabled?'Tạm dừng':'Bật lại')+'</button></div></div>').join('')||'<p class="muted">Chưa có Page.</p>';
+$('sources').innerHTML=sources.map(s=>'<div class="item"><b>'+esc(s.name)+'</b><p class="muted">'+esc(s.source_type)+' · '+esc(s.url||'Nguồn thủ công')+'</p></div>').join('')||'<p class="muted">Chưa có nguồn.</p>';
+$('assignPage').innerHTML=pages.map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');$('assignSource').innerHTML=sources.map(s=>'<option value="'+s.id+'">'+esc(s.name)+'</option>').join('');
+const dr=await request('/api/facebook-hub/drafts');$('drafts').innerHTML=(dr.items||[]).map(x=>'<div class="item"><b>'+esc(x.title)+'</b><p class="muted">'+esc(x.page_name)+' · Tin cậy '+x.confidence+'/100 · '+esc(x.review_status)+'</p><p>'+esc(x.body)+'</p><p class="muted">'+esc(x.review_reason||'')+'</p><div class="row"><button class="btn alt" onclick="review(\''+x.id+'\',\'approved\')">Duyệt</button><button class="btn alt" onclick="review(\''+x.id+'\',\'held\')">Giữ lại</button><button class="btn danger" onclick="review(\''+x.id+'\',\'rejected\')">Từ chối</button></div></div>').join('')||'<p class="muted">Chưa có bản nháp. Chức năng tạo bài tự động sẽ được bổ sung ở bước tiếp theo.</p>';
+$('activity').innerHTML=(d.activity||[]).map(a=>'<div class="item"><b>'+esc(a.action)+'</b><p class="muted">'+esc(a.detail)+' · '+esc(a.created_at)+'</p></div>').join('')||'<p class="muted">Chưa có hoạt động.</p>';msg('Đã kết nối. Dữ liệu tải từ backend.')}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+$('connect').onclick=()=>refresh().catch(e=>msg(e.message,true));
+$('addPage').onclick=async()=>{try{await request('/api/facebook-hub/pages',{method:'POST',body:JSON.stringify({name:$('pageName').value,meta_page_id:$('metaPageId').value||null})});$('pageName').value='';$('metaPageId').value='';await refresh()}catch(e){msg(e.message,true)}};
+$('addSource').onclick=async()=>{try{await request('/api/facebook-hub/sources',{method:'POST',body:JSON.stringify({name:$('sourceName').value,url:$('sourceUrl').value||null,source_type:$('sourceType').value})});$('sourceName').value='';$('sourceUrl').value='';await refresh()}catch(e){msg(e.message,true)}};
+$('assign').onclick=async()=>{try{await request('/api/facebook-hub/pages/'+$('assignPage').value+'/sources/'+$('assignSource').value,{method:'POST'});await refresh();msg('Đã gán nguồn cho Page.')}catch(e){msg(e.message,true)}};
+window.togglePage=async(id,enabled)=>{try{await request('/api/facebook-hub/pages/'+id,{method:'PATCH',body:JSON.stringify({enabled})});await refresh()}catch(e){msg(e.message,true)}};
+window.review=async(id,review_status)=>{try{await request('/api/facebook-hub/drafts/'+id+'/review',{method:'PATCH',body:JSON.stringify({review_status})});await refresh()}catch(e){msg(e.message,true)}};
+</script></body></html>
