@@ -133,7 +133,7 @@ def _child_text(element: ET.Element, names: tuple[str, ...]) -> str:
 
 
 def parse_feed(xml_bytes: bytes, feed_url: str) -> list[dict[str, str | None]]:
-    upper = xml_bytes[:4096].upper()
+    upper = xml_bytes.upper()
     if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
         raise ValueError("XML có khai báo DTD/entity không được hỗ trợ.")
     try:
