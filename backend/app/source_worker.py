@@ -222,7 +222,8 @@ def main() -> None:
     print(f"RSS worker started; interval={args.interval_minutes} minutes", flush=True)
     while True:
         results = poll_all()
-        print({"checked": len(results), "results": results}, flush=True)
+        processed = process_unprocessed()
+        print({"checked": len(results), "results": results, "processed": processed}, flush=True)
         if args.once:
             break
         time.sleep(args.interval_minutes * 60)
