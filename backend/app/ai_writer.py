@@ -167,7 +167,7 @@ def rewrite_pending(limit: int = 5) -> list[dict[str, str]]:
         rows = conn.execute("""
           SELECT id FROM fb_drafts
           WHERE review_status IN ('pending','held')
-            AND COALESCE(writer_status,'not_started') IN ('not_started','error')
+            AND COALESCE(writer_status,'not_started')='not_started'
           ORDER BY created_at LIMIT ?
         """, (limit,)).fetchall()
     return [rewrite_draft(row["id"]) for row in rows]
