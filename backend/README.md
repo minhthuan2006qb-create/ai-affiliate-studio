@@ -90,3 +90,6 @@ python -m app.source_worker
 It checks enabled RSS sources every 60 minutes by default. For a one-time test, run `python -m app.source_worker --once`. You can change the interval with `--interval-minutes 60` (minimum 5 minutes). The worker stores only feed metadata (title, canonical link, short summary, publication timestamp and first-seen timestamp), deduplicated per source. It does not download or archive full linked articles.
 
 Basic safety limits: HTTP(S) only, no URL credentials, reject non-public IP destinations, no redirects, 12-second timeout, 1 MB maximum feed, 100 entries per poll. Add only RSS feeds you are authorized to monitor. RSS parsing and deduplication do not verify the truth of a story and do not publish to Pages.
+
+
+Operational note: The API and RSS worker must share the same persistent SQLite file. If `FACEBOOK_HUB_DB` is set, configure it identically for both processes; otherwise both use `DATABASE_PATH`. The RSS worker is a separate long-running process and is not started by the API container automatically.
