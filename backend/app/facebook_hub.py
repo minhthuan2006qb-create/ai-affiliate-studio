@@ -61,6 +61,14 @@ def init_hub_db() -> None:
           id TEXT PRIMARY KEY, action TEXT NOT NULL, status TEXT NOT NULL,
           detail TEXT, created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS fb_source_items (
+          id TEXT PRIMARY KEY,
+          source_id TEXT NOT NULL REFERENCES fb_sources(id) ON DELETE CASCADE,
+          item_key TEXT NOT NULL, title TEXT NOT NULL, item_url TEXT NOT NULL,
+          summary TEXT, published_at TEXT, first_seen_at TEXT NOT NULL,
+          UNIQUE(source_id, item_key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_fb_source_items_seen ON fb_source_items(first_seen_at DESC);
         CREATE INDEX IF NOT EXISTS idx_fb_drafts_status ON fb_drafts(review_status, created_at);
         """)
 
