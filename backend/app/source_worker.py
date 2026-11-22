@@ -9,7 +9,9 @@ import sqlite3
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
-from pathlib import Path\n\nfrom .content_processor import process_unprocessed
+from pathlib import Path
+
+from .content_processor import process_unprocessed
 from urllib.parse import urlsplit
 
 import httpx
