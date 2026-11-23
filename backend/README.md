@@ -270,3 +270,22 @@ The Hub includes an authenticated, on-demand token health check:
   Run a one-time check with `python -m app.facebook_token_health --once`. Change the interval with `--interval-hours 24` (minimum 1 hour). Run it as a separate process/container using the same persistent `FACEBOOK_HUB_DB` (or `DATABASE_PATH`) and Meta environment variables as the API.
 
 The check uses the server-side Meta App ID/secret to call `debug_token`. Credentials and Page tokens are never returned to the browser. A successful check only confirms Meta's response at that moment; the future publisher must still revalidate immediately before every write. This worker does not refresh tokens, renew permissions, or publish posts.
+
+
+## Meta publishing worker (guarded, opt-in)
+
+The Meta publisher consumes only schedule rows already marked `ready`. It rechecks the approved draft snapshot, Page state, duplicate history, encrypted Page token, token validity/scopes, and the Page's `CREATE_CONTENT` task immediately before the Graph API request. It sends a text post to the Page Feed and stores the returned post ID. It never reads or returns raw access tokens to the UI.
+
+**Live publishing is disabled by default.** To permit live requests, configure `META_PUBLISHING_ENABLED=true` only after OAuth, app review/permissions, persistent storage, HTTPS, and a test Page are ready. The individual Page must also have `auto_publish=1`; both switches are required. If either switch is off, the worker leaves ready items untouched. Do not enable this on production Pages until a controlled test is complete.
+
+Run the publisher as a separate process/container sharing the exact same persistent Hub database and Meta environment as the API:
+
+```bash
+cd backend
+python -m app.facebook_publisher --once
+python -m app.facebook_publisher --interval-seconds 30 --limit 10
+```
+
+The worker never automatically retries a request with an ambiguous outcome. A network timeout or worker interruption after claiming an item is recorded as `unknown`, because Meta may already have created the post; inspect the Page manually before any recovery. Other errors are recorded as `failed` and also require operator review. This avoids blind duplicate posting but means an operator must reconcile uncertain outcomes. Publishing is not considered deployed or live-tested merely because CI passes.
+
+Status endpoint: `GET /api/facebook-hub/meta/publish/status` (Hub API key required). Meta Page Feed publishing uses the Page access token, `pages_manage_posts`, `pages_read_engagement`, `pages_show_list`, and the Page's `CREATE_CONTENT` task; see the [official Page Feed publishing requirements](https://developers.facebook.com/docs/graph-api/reference/page/feed/).
