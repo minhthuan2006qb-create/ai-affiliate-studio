@@ -62,7 +62,8 @@ def test_interrupted_publish_is_marked_unknown_not_retried(tmp_path, monkeypatch
     monkeypatch.setattr(publisher, "PUBLISH_ENABLED", True)
     with hub.connect() as conn:
         conn.execute("""
-          UPDATE fb_publish_schedule SET state='publishing',publish_attempt_id='attempt-1'
+          UPDATE fb_publish_schedule SET state='publishing',publish_attempt_id='attempt-1',
+            publish_attempted_at='2000-01-01T00:00:00+00:00'
           WHERE id=?
         """, (schedule_id,))
     result = publisher.process_ready_items()
