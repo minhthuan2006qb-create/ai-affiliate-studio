@@ -58,3 +58,29 @@ def test_auto_publish_locked_until_meta_connection(tmp_path, monkeypatch):
         response = client.patch(f"/api/facebook-hub/pages/{page_id}", headers=headers,
                                 json={"auto_publish": True})
     assert response.status_code == 409
+
+
+def test_page_editorial_profile_can_be_updated_and_read(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    main = load_hub_app(tmp_path, monkeypatch)
+    headers = {"Authorization": "Bearer hub-test-key"}
+    with TestClient(main.app) as client:
+        page = client.post("/api/facebook-hub/pages", headers=headers,
+                           json={"name": "Tin tức Đà Nẵng"})
+        page_id = page.json()["id"]
+        payload = {
+            "editorial_tone": "Gần gũi, ngắn gọn",
+            "editorial_audience": "Người dân Đà Nẵng",
+            "editorial_topics": "Giao thông\\nSự kiện địa phương",
+            "editorial_avoid": "Tin đồn chưa xác minh",
+            "editorial_guidance": "Ưu tiên thời gian, địa điểm và nguồn chính thức.",
+        }
+        saved = client.put(f"/api/facebook-hub/pages/{page_id}/editorial-profile",
+                           headers=headers, json=payload)
+        assert saved.status_code == 200
+        profile = client.get(f"/api/facebook-hub/pages/{page_id}/editorial-profile",
+                             headers=headers)
+        assert profile.status_code == 200
+        assert profile.json()["editorial_tone"] == payload["editorial_tone"]
+        assert profile.json()["editorial_topics"] == payload["editorial_topics"]
+        assert profile.json()["editorial_audience"] == payload["editorial_audience"]
