@@ -211,3 +211,40 @@ python -m app.facebook_scheduler --once
 The worker checks due queue entries every 60 seconds by default (minimum 10 seconds), revalidates Page enabled state, Page schedule enabled state, draft approval, content snapshot hash, and duplicate history, then changes eligible entries from `queued` to `ready`. Failed checks move the entry to `blocked`. The worker does not call Meta APIs, does not publish, and does not mark drafts as published. A future Meta publishing worker must perform a fresh final validation immediately before sending each post; `ready` is not proof that Facebook accepted a post.
 
 The due worker also re-reads the current draft and Page settings inside a SQLite `BEGIN IMMEDIATE` transaction immediately before promoting a queue item to `ready`. This closes the validation-to-ready race where a draft could be edited after the first check. The transition still does not publish; the future Meta publisher must perform its own final validation before every API request.
+
+## Meta OAuth: connect Facebook Pages
+
+The first Meta connection layer is implemented as a backend-only OAuth flow. It connects Pages and encrypts each Page access token at rest; it does **not** publish posts yet.
+
+### Server configuration
+
+Copy `.env.example` to your deployment's environment configuration (do not commit real secrets), then set:
+
+- `META_APP_ID`: Meta App ID.
+- `META_APP_SECRET`: Meta App Secret. Server-side only.
+- `META_REDIRECT_URI`: exact HTTPS callback URL configured in the Meta app, normally `https://YOUR-DOMAIN/api/facebook-hub/meta/callback`.
+- `META_TOKEN_ENCRYPTION_KEY`: a persistent Fernet key. Generate it with:
+  ```bash
+  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+  ```
+- `META_GRAPH_API_VERSION`: defaults to `v27.0`; verify the supported version before upgrading.
+
+Back up the encryption key securely. If it is lost or changed, existing encrypted Page tokens cannot be decrypted. Never put the App Secret, encryption key, or Page tokens in frontend JavaScript, browser storage, logs, or chat messages.
+
+### OAuth endpoints
+
+- `GET /api/facebook-hub/meta/connect`: creates a one-time, 10-minute OAuth state and redirects to Meta. The state is also bound to an HttpOnly browser cookie.
+- `GET /api/facebook-hub/meta/callback`: validates and consumes the state, exchanges the authorization code, checks granted permissions, fetches Pages, and stores eligible Page tokens encrypted.
+- `GET /api/facebook-hub/meta/status`: lists connection status and granted scopes (Hub API key required).
+- `DELETE /api/facebook-hub/meta/pages/{page_id}`: disconnects a Page, deletes its stored token, and forces auto-publish off (Hub API key required).
+
+The requested permissions are `pages_show_list`, `pages_read_engagement`, and `pages_manage_posts`. The callback also requires the Page to return the `CREATE_CONTENT` task before marking it connected. Meta may require app roles or review/advanced access depending on who uses the app and its mode; complete the requirements shown in the Meta developer dashboard.
+
+The OAuth callback does not expose tokens in its response. Page tokens are encrypted using Fernet before being written to SQLite. Disconnecting removes the local token but does not revoke the user's Meta app authorization.
+
+### Current limitations
+
+- No post publishing, scheduling worker integration, token refresh/expiry monitor, or remote Meta permission revocation yet.
+- A connected Page only means the OAuth flow returned a Page token and the required scopes/task were observed at connection time. Permissions can later be revoked or tokens invalidated.
+- The publishing feature must re-check token validity, Page task, draft approval, content hash, schedule state, and duplicate history immediately before every Meta API write.
+- Keep the existing internal scheduler in non-publishing mode until that final publisher and its tests are implemented.
