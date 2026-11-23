@@ -53,7 +53,11 @@ def test_ai_rewrite_keeps_source_links_and_requires_human_review(tmp_path, monke
     with hub.connect() as conn:
         stamp = hub.now()
         conn.execute("INSERT INTO fb_pages(id,name,created_at,updated_at) VALUES(?,?,?,?)",
-                     ("p1", "Page", stamp, stamp))
+                     ("p1", "Tin tức Đà Nẵng", stamp, stamp))
+        conn.execute("""UPDATE fb_pages SET editorial_tone=?, editorial_audience=?,
+          editorial_topics=?, editorial_avoid=?, editorial_guidance=? WHERE id=?""",
+          ("Gần gũi, ngắn gọn", "Người dân Đà Nẵng", "Giao thông\\nSự kiện địa phương",
+           "Tin đồn chưa xác minh", "Ưu tiên thông tin thiết thực.", "p1"))
         conn.execute("INSERT INTO fb_sources(id,name,url,source_type,created_at) VALUES(?,?,?,?,?)",
                      ("s1", "Nguồn A", "https://source.example/rss", "rss", stamp))
         conn.execute("INSERT INTO fb_page_sources(page_id,source_id,created_at) VALUES(?,?,?)",
@@ -73,6 +77,9 @@ def test_ai_rewrite_keeps_source_links_and_requires_human_review(tmp_path, monke
     result = aw.rewrite_draft(draft_id, client=client)
     assert result["status"] == "done"
     assert client.payload["json"]["messages"][1]["content"].find("Không suy đoán") >= 0
+    prompt = json.loads(client.payload["json"]["messages"][1]["content"])
+    assert prompt["page_editorial_profile"]["tone"] == "Gần gũi, ngắn gọn"
+    assert "Giao thông" in prompt["page_editorial_profile"]["topics"]
     with hub.connect() as conn:
         draft = conn.execute("SELECT * FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
         assert draft["writer_status"] == "done"
