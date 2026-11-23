@@ -162,3 +162,23 @@ The candidate processor checks the feed item's publication timestamp when it is 
 - This rule is a conservative heuristic to let substantial updates (for example, a newly announced time, venue, lineup, or ticket detail) reach review.
 - Minor wording changes and repeated source URLs without meaningful new information remain held.
 - The rule does not verify whether new details are true. The existing source-trust and evidence checks still apply, and a human should review the update before any publication.
+
+
+## Per-Page publishing schedule queue
+
+The Facebook Hub now supports a separate internal schedule for each Page:
+
+- Configure timezone, allowed posting times, maximum posts per day, and minimum spacing.
+- Pause or enable schedule generation independently for each Page.
+- The planner selects only drafts with `review_status='approved'`, prioritizes higher confidence, and never queues pending/held/rejected drafts.
+- Existing queued slots count toward daily limits and minimum spacing. A draft can appear only once in the queue.
+- Queue items can be listed and cancelled through the schedule API.
+
+Endpoints (all require the Hub API key):
+
+- `GET/PUT /api/facebook-hub/pages/{page_id}/schedule-settings`
+- `POST /api/facebook-hub/pages/{page_id}/schedule/plan` with `{"days":7}` (1–30 days)
+- `GET /api/facebook-hub/pages/{page_id}/schedule`
+- `PATCH /api/facebook-hub/schedule/{schedule_id}?state=cancelled`
+
+**Important:** these are planned slots in the local database only. They do not publish to Facebook, do not call Meta APIs, and do not change a draft's review status to published. Meta OAuth and a separate controlled publishing worker are still required for real posting.
