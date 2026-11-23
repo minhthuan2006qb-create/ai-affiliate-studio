@@ -53,7 +53,7 @@ def test_scheduler_only_queues_approved_and_respects_daily_limit_and_spacing(tmp
     add_draft("p1", "held", "Bài bị giữ")
     configure()
     result = scheduler.build_schedule("p1", scheduler.PlanRequest(days=7))
-    assert result["count"] == 2
+    assert result["count"] == 3
     with hub.connect() as conn:
         rows = conn.execute("""
           SELECT q.planned_at, d.review_status FROM fb_publish_schedule q
@@ -62,8 +62,12 @@ def test_scheduler_only_queues_approved_and_respects_daily_limit_and_spacing(tmp
     assert all(row["review_status"] == "approved" for row in rows)
     zone = ZoneInfo("Asia/Ho_Chi_Minh")
     planned = [datetime.fromisoformat(row["planned_at"]).astimezone(zone) for row in rows]
-    assert planned[0].date() == planned[1].date()
-    assert (planned[1] - planned[0]).total_seconds() >= 90 * 60
+    per_day = {}
+    for item in planned:
+        per_day[item.date()] = per_day.get(item.date(), 0) + 1
+    assert max(per_day.values()) <= 2
+    assert all((planned[i + 1] - planned[i]).total_seconds() >= 90 * 60
+               for i in range(len(planned) - 1))
 
 
 def test_paused_page_cannot_generate_schedule(tmp_path):
