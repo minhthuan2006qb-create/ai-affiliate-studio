@@ -152,3 +152,63 @@ def test_future_dated_news_is_held(tmp_path, monkeypatch):
         conn.execute("UPDATE fb_source_items SET published_at=? WHERE id='i1'", (future_date,))
     result = cp.process_item("i1")
     assert result["results"][0]["status"] == "held"
+
+
+
+def test_approved_source_url_with_tracking_params_is_blocked_on_same_page(tmp_path, monkeypatch):
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    first = hub.create_draft(hub.DraftCreate(
+        page_id="p1", title="Lịch bắn pháo hoa Đà Nẵng 2026",
+        source_url="https://example.com/events/fireworks?utm_source=facebook&fbclid=abc",
+        body="Lịch bắn pháo hoa Đà Nẵng năm 2026 được công bố với nhiều đêm trình diễn.",
+        confidence=90))
+    hub.review_draft(first["id"], hub.DraftReview(review_status="approved"))
+    second = hub.create_draft(hub.DraftCreate(
+        page_id="p1", title="Lịch bắn pháo hoa Đà Nẵng",
+        source_url="https://example.com/events/fireworks?utm_campaign=share",
+        body="Thông tin lịch bắn pháo hoa Đà Nẵng năm 2026.",
+        confidence=95))
+    assert second["review_status"] == "held"
+    assert "trùng nội dung" in second["review_reason"].lower()
+
+
+def test_near_duplicate_approved_content_is_blocked_on_same_page(tmp_path, monkeypatch):
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    first = hub.create_draft(hub.DraftCreate(
+        page_id="p1", title="Đà Nẵng tổ chức lễ hội pháo hoa quốc tế",
+        source_url="https://example.com/a",
+        body="Đà Nẵng tổ chức lễ hội pháo hoa quốc tế vào mùa hè năm nay với nhiều đội thi tham gia.",
+        confidence=90))
+    hub.review_draft(first["id"], hub.DraftReview(review_status="approved"))
+    second = hub.create_draft(hub.DraftCreate(
+        page_id="p1", title="Lễ hội pháo hoa quốc tế tổ chức tại Đà Nẵng",
+        source_url="https://example.com/b",
+        body="Lễ hội pháo hoa quốc tế tại Đà Nẵng diễn ra mùa hè năm nay, có nhiều đội thi tham dự.",
+        confidence=95))
+    assert second["review_status"] == "held"
+
+
+def test_same_story_is_allowed_on_a_different_page(tmp_path, monkeypatch):
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    with hub.connect() as conn:
+        stamp = hub.now()
+        conn.execute("INSERT INTO fb_pages(id,name,created_at,updated_at) VALUES(?,?,?,?)",
+                     ("p2", "Page khác", stamp, stamp))
+    first = hub.create_draft(hub.DraftCreate(
+        page_id="p1", title="Lịch bắn pháo hoa Đà Nẵng 2026",
+        source_url="https://example.com/events/fireworks",
+        body="Lịch bắn pháo hoa Đà Nẵng năm 2026 được công bố.",
+        confidence=90))
+    hub.review_draft(first["id"], hub.DraftReview(review_status="approved"))
+    second = hub.create_draft(hub.DraftCreate(
+        page_id="p2", title="Lịch bắn pháo hoa Đà Nẵng 2026",
+        source_url="https://example.com/events/fireworks",
+        body="Lịch bắn pháo hoa Đà Nẵng năm 2026 được công bố.",
+        confidence=90))
+    assert second["review_status"] == "pending"
