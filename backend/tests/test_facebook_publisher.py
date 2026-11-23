@@ -73,3 +73,24 @@ def test_interrupted_publish_is_marked_unknown_not_retried(tmp_path, monkeypatch
                            (schedule_id,)).fetchone()
     assert row["state"] == "unknown"
     assert "đối soát" in row["publish_error"]
+
+
+def test_final_gate_blocks_if_approval_is_revoked_after_claim(tmp_path, monkeypatch):
+    schedule_id = _seed(tmp_path / "publisher.sqlite3", auto_publish=True)
+    monkeypatch.setattr(publisher, "PUBLISH_ENABLED", True)
+    stamp = hub.now()
+    with hub.connect() as conn:
+        conn.execute("""
+          INSERT INTO fb_meta_page_tokens
+          (page_id,meta_page_id,token_ciphertext,granted_scopes,connected_at,updated_at)
+          VALUES('p1','meta-p1','encrypted-placeholder','pages_manage_posts,pages_read_engagement,pages_show_list',?,?)
+        """, (stamp, stamp))
+    item = publisher._claim_due_item(schedule_id)
+    assert item is not None
+    with hub.connect() as conn:
+        conn.execute("UPDATE fb_drafts SET review_status='held' WHERE id='d1'")
+    assert publisher._still_eligible_to_send(item) is False
+    with hub.connect() as conn:
+        state = conn.execute("SELECT state FROM fb_publish_schedule WHERE id=?",
+                             (schedule_id,)).fetchone()["state"]
+    assert state == "blocked"
