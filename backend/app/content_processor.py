@@ -122,7 +122,7 @@ def publication_age_hours(item: sqlite3.Row) -> float | None:
         return None
 
 
-def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[int, list[str], str, int, int, list[str]]:
+def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[int, list[str], str, int, int, list[str], bool, bool]:
     rows = [item, *matched]
     hosts = {host_of(row["item_url"]) for row in rows}
     hosts.discard("")
@@ -137,13 +137,14 @@ def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[i
     if not (item["summary"] or "").strip():
         score = min(score, 55)
     conflicts = detect_numeric_conflicts(item, matched)
+    ages = [publication_age_hours(row) for row in rows]
+    stale = any(age is not None and age > WINDOW_HOURS for age in ages)
+    future_dated = any(age is not None and age < -6 for age in ages)
     age_hours = publication_age_hours(item)
-    stale = age_hours is not None and age_hours > WINDOW_HOURS
-    future_dated = age_hours is not None and age_hours < -6
     if stale:
-        conflicts.append(f"Tin đã cũ: thời điểm xuất bản cách hiện tại khoảng {int(age_hours)} giờ")
+        conflicts.append("Có ít nhất một nguồn trong cụm tin đã cũ hơn 72 giờ")
     if future_dated:
-        conflicts.append(f"Thời điểm xuất bản nằm trong tương lai khoảng {int(abs(age_hours))} giờ")
+        conflicts.append("Có ít nhất một nguồn trong cụm tin có thời điểm xuất bản nằm quá 6 giờ trong tương lai")
     reasons = [
         f"{len(hosts)} hostname khác nhau",
         f"{len(groups)} nhóm xuất bản (nhóm khai báo hoặc hostname dự phòng; chưa chứng minh độc lập)",
@@ -155,7 +156,7 @@ def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[i
         reasons.append("CẢNH BÁO MÂU THUẪN: " + "; ".join(conflicts))
     reasons.append("Điểm metadata không phải xác minh sự thật; hostname không chứng minh tính độc lập.")
     rationale = ". ".join(reasons)
-    return score, sorted(hosts), rationale, len(trusted_groups), official, conflicts
+    return score, sorted(hosts), rationale, len(trusted_groups), official, conflicts, stale, future_dated
 
 
 def create_candidate_draft(conn: sqlite3.Connection, item: sqlite3.Row, page_id: str,
@@ -207,7 +208,7 @@ def process_item(item_id: str) -> dict[str, object]:
                             (item_id, page["id"])).fetchone():
                 continue
             matched = collect_candidates(conn, {**dict(item), "page_id": page["id"]})
-            score, hosts, rationale, trusted_groups, official_sources, conflicts = preliminary_signal(item, matched)
+            score, hosts, rationale, trusted_groups, official_sources, conflicts, stale, future_dated = preliminary_signal(item, matched)
             matched_ids = [row["id"] for row in matched]
             existing = None
             if matched_ids:
