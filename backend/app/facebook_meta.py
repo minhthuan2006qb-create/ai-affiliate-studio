@@ -90,6 +90,19 @@ def _exchange_code(code: str, app_id: str, app_secret: str, redirect_uri: str) -
         raise HTTPException(502, "Meta không cấp được access token. Hãy kiểm tra cấu hình OAuth và thử lại.")
 
 
+def _fetch_granted_permissions(user_token: str) -> set[str]:
+    try:
+        with httpx.Client(timeout=15.0, follow_redirects=False) as client:
+            response = client.get(f"{GRAPH_BASE}/me/permissions",
+                                  params={"access_token": user_token})
+            response.raise_for_status()
+            payload = response.json()
+        return {item["permission"] for item in payload.get("data", [])
+                if item.get("status") == "granted" and item.get("permission")}
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(502, "Không thể xác nhận quyền đã cấp từ Meta.")
+
+
 def _fetch_pages(user_token: str) -> list[dict]:
     pages: list[dict] = []
     url = f"{GRAPH_BASE}/me/accounts"
@@ -167,6 +180,12 @@ def finish_meta_oauth(
         raise HTTPException(400, "OAuth state không hợp lệ hoặc đã hết hạn. Hãy bắt đầu kết nối lại.")
 
     user_token = _exchange_code(code, app_id, app_secret, redirect_uri)
+    granted_permissions = _fetch_granted_permissions(user_token)
+    required_permissions = {"pages_show_list", "pages_read_engagement", "pages_manage_posts"}
+    missing_permissions = required_permissions - granted_permissions
+    if missing_permissions:
+        raise HTTPException(403, "Bạn chưa cấp đủ quyền Meta cần thiết: " +
+                            ", ".join(sorted(missing_permissions)))
     pages = _fetch_pages(user_token)
     if not pages:
         raise HTTPException(403, "Không tìm thấy Page có quyền phù hợp trong tài khoản này.")
@@ -174,7 +193,7 @@ def finish_meta_oauth(
     with connect() as conn:
         for item in pages:
             tasks = set(item.get("tasks") or [])
-            if "CREATE_CONTENT" not in tasks and "MANAGE" not in tasks:
+            if "CREATE_CONTENT" not in tasks:
                 skipped.append(item["name"])
                 continue
             existing = conn.execute("SELECT id FROM fb_pages WHERE meta_page_id=?",
@@ -197,7 +216,7 @@ def finish_meta_oauth(
                 ON CONFLICT(page_id) DO UPDATE SET meta_page_id=excluded.meta_page_id,
                   token_ciphertext=excluded.token_ciphertext,granted_scopes=excluded.granted_scopes,
                   updated_at=excluded.updated_at""",
-                (page_id, item["id"], encrypt_token(item["access_token"]), SCOPES, now(), now()))
+                (page_id, item["id"], encrypt_token(item["access_token"]), ",".join(sorted(granted_permissions)), now(), now()))
             connected.append({"id": page_id, "name": item["name"]})
         log(conn, "meta.oauth_connected", f"connected={len(connected)}; skipped={len(skipped)}")
     from fastapi.responses import JSONResponse
