@@ -144,3 +144,13 @@ A candidate enters the pending review queue only if it has metadata coverage of 
 ### Freshness and duplicate-news safeguards
 
 The candidate processor checks the feed item's publication timestamp when it is available. Items older than 72 hours, or dated more than 6 hours into the future, are held with an explanation. If a feed omits a valid publication timestamp, freshness is marked unknown and the item still has to pass the other conservative checks. This timestamp rule is a triage heuristic, not a guarantee that the underlying event is still current. Similar headlines are clustered within a 72-hour first-seen window; the processor does not yet perform semantic event resolution or detect every paraphrased duplicate.
+
+
+### Per-Page duplicate history
+
+- When a draft is approved, its normalized source URL, title, body, Page ID, and approval time are stored in `fb_page_content_history`.
+- New drafts on that same Page are held when the source URL matches after removing common tracking parameters (such as `utm_*` and `fbclid`), or when normalized title/body token similarity reaches the conservative near-duplicate threshold.
+- Duplicate history is isolated by Page: the same story may be independently used by another Page with a different audience or editorial profile.
+- Revoking approval removes that draft from the history. The review endpoint also rejects approval if another approved item on that Page is already a match.
+- This is a heuristic duplicate guard, not semantic fact-checking. A genuinely updated story can still be flagged and should be reviewed manually; there is not yet an explicit “publish as update” override.
+- This records approval in the Hub only. It does not mean the post has been published to Facebook; Meta OAuth and actual publishing are still not implemented.
