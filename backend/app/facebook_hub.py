@@ -381,7 +381,16 @@ def review_draft(draft_id: str, payload: DraftReview):
         if payload.review_status == "approved":
             approved = conn.execute("SELECT * FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
             remember_approved(conn, approved, now())
+            # A previously revoked draft may be approved again; keep cancelled
+            # schedule rows cancelled so a deliberate new plan is required.
         else:
             conn.execute("DELETE FROM fb_page_content_history WHERE draft_id=?", (draft_id,))
+            # Never leave a revoked draft in the publish queue.
+            tables = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fb_publish_schedule'").fetchone()
+            if tables:
+                conn.execute("""
+                  UPDATE fb_publish_schedule SET state='cancelled', updated_at=?
+                  WHERE draft_id=? AND state IN ('queued','paused')
+                """, (now(), draft_id))
         log(conn, "draft.reviewed", f"{draft_id}:{payload.review_status}")
     return {"ok": True, "review_status": payload.review_status}
