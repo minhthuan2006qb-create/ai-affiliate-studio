@@ -117,3 +117,38 @@ def test_conflicting_numeric_claims_force_candidate_to_held(tmp_path, monkeypatc
         draft = conn.execute("SELECT * FROM fb_drafts").fetchone()
         assert draft["review_status"] == "held"
         assert "mâu thuẫn" in draft["review_reason"].lower()
+
+
+def test_old_published_news_is_held_even_with_multiple_trusted_sources(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    add_item(path, "i1", "s1", "Đà Nẵng tổ chức lễ hội pháo hoa", "https://news-a.example/a")
+    add_item(path, "i2", "s2", "Lễ hội pháo hoa Đà Nẵng tổ chức", "https://news-b.example/b")
+    add_item(path, "i3", "s3", "Đà Nẵng tổ chức lễ hội pháo hoa", "https://news-c.example/c")
+    old_date = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    with hub.connect() as conn:
+        for sid, group in [("s1", "publisher-a"), ("s2", "publisher-b"), ("s3", "publisher-c")]:
+            conn.execute("UPDATE fb_sources SET trust_level='established', publisher_group=? WHERE id=?",
+                         (group, sid))
+        conn.execute("UPDATE fb_source_items SET published_at=? WHERE id='i1'", (old_date,))
+    result = cp.process_item("i1")
+    assert result["results"][0]["status"] == "held"
+    with hub.connect() as conn:
+        draft = conn.execute("SELECT * FROM fb_drafts").fetchone()
+        assert draft["review_status"] == "held"
+        assert "tin đã cũ" in draft["review_reason"].lower()
+
+
+def test_future_dated_news_is_held(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    add_item(path, "i1", "s1", "Thông báo sự kiện Đà Nẵng", "https://news-a.example/a")
+    future_date = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    with hub.connect() as conn:
+        conn.execute("UPDATE fb_source_items SET published_at=? WHERE id='i1'", (future_date,))
+    result = cp.process_item("i1")
+    assert result["results"][0]["status"] == "held"
