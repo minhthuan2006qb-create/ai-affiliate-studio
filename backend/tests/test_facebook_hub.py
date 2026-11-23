@@ -84,3 +84,29 @@ def test_page_editorial_profile_can_be_updated_and_read(tmp_path, monkeypatch):
         assert profile.json()["editorial_tone"] == payload["editorial_tone"]
         assert profile.json()["editorial_topics"] == payload["editorial_topics"]
         assert profile.json()["editorial_audience"] == payload["editorial_audience"]
+
+
+def test_source_trust_profile_can_be_updated(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    main = load_hub_app(tmp_path, monkeypatch)
+    headers = {"Authorization": "Bearer hub-test-key"}
+    with TestClient(main.app) as client:
+        source = client.post("/api/facebook-hub/sources", headers=headers, json={
+            "name": "Cổng thông tin chính thức",
+            "url": "https://example.gov.vn/rss",
+            "source_type": "rss",
+        })
+        source_id = source.json()["id"]
+        response = client.patch(f"/api/facebook-hub/sources/{source_id}/trust",
+                                 headers=headers, json={
+            "trust_level": "official",
+            "publisher_group": "co-quan-a",
+            "is_official": True,
+            "trust_notes": "Đã kiểm tra trang thuộc cơ quan phát hành.",
+        })
+        assert response.status_code == 200
+        dashboard = client.get("/api/facebook-hub/dashboard", headers=headers)
+        saved = next(item for item in dashboard.json()["sources"] if item["id"] == source_id)
+        assert saved["trust_level"] == "official"
+        assert saved["publisher_group"] == "co-quan-a"
+        assert saved["is_official"] == 1 or saved["is_official"] is True
