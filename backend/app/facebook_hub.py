@@ -37,6 +37,11 @@ def init_hub_db() -> None:
           id TEXT PRIMARY KEY, name TEXT NOT NULL, meta_page_id TEXT UNIQUE,
           connection_status TEXT NOT NULL DEFAULT 'not_connected',
           enabled INTEGER NOT NULL DEFAULT 1, auto_publish INTEGER NOT NULL DEFAULT 0,
+          editorial_tone TEXT NOT NULL DEFAULT 'Trung lập, rõ ràng, dễ hiểu',
+          editorial_audience TEXT NOT NULL DEFAULT 'Độc giả phổ thông tại Việt Nam',
+          editorial_topics TEXT NOT NULL DEFAULT '',
+          editorial_avoid TEXT NOT NULL DEFAULT '',
+          editorial_guidance TEXT NOT NULL DEFAULT '',
           created_at TEXT NOT NULL, updated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS fb_sources (
@@ -71,6 +76,17 @@ def init_hub_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_fb_source_items_seen ON fb_source_items(first_seen_at DESC);
         CREATE INDEX IF NOT EXISTS idx_fb_drafts_status ON fb_drafts(review_status, created_at);
         """)
+        # Additive migration for existing installations.
+        page_columns = {row["name"] for row in conn.execute("PRAGMA table_info(fb_pages)")}
+        for column, declaration in {
+            "editorial_tone": "TEXT NOT NULL DEFAULT 'Trung lập, rõ ràng, dễ hiểu'",
+            "editorial_audience": "TEXT NOT NULL DEFAULT 'Độc giả phổ thông tại Việt Nam'",
+            "editorial_topics": "TEXT NOT NULL DEFAULT ''",
+            "editorial_avoid": "TEXT NOT NULL DEFAULT ''",
+            "editorial_guidance": "TEXT NOT NULL DEFAULT ''",
+        }.items():
+            if column not in page_columns:
+                conn.execute(f"ALTER TABLE fb_pages ADD COLUMN {column} {declaration}")
 
 
 def require_hub_key(authorization: str | None = Header(default=None)) -> None:
@@ -89,6 +105,13 @@ class PageCreate(BaseModel):
 class PageUpdate(BaseModel):
     enabled: bool | None = None
     auto_publish: bool | None = None
+
+class EditorialProfileUpdate(BaseModel):
+    editorial_tone: str = Field(default="Trung lập, rõ ràng, dễ hiểu", min_length=2, max_length=160)
+    editorial_audience: str = Field(default="Độc giả phổ thông tại Việt Nam", min_length=2, max_length=200)
+    editorial_topics: str = Field(default="", max_length=1200)
+    editorial_avoid: str = Field(default="", max_length=1200)
+    editorial_guidance: str = Field(default="", max_length=1600)
 
 
 class SourceCreate(BaseModel):
@@ -173,6 +196,36 @@ def update_page(page_id: str, payload: PageUpdate):
         conn.execute(f"UPDATE fb_pages SET {sets}, updated_at=? WHERE id=?", vals)
         log(conn, "page.updated", page_id)
     return {"ok": True}
+
+
+@router.get("/pages/{page_id}/editorial-profile", dependencies=[Depends(require_hub_key)])
+def get_editorial_profile(page_id: str):
+    with connect() as conn:
+        row = conn.execute("""
+          SELECT id, name, editorial_tone, editorial_audience, editorial_topics,
+                 editorial_avoid, editorial_guidance
+          FROM fb_pages WHERE id=?
+        """, (page_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Không tìm thấy Page.")
+    return dict(row)
+
+
+@router.put("/pages/{page_id}/editorial-profile", dependencies=[Depends(require_hub_key)])
+def update_editorial_profile(page_id: str, payload: EditorialProfileUpdate):
+    values = payload.model_dump()
+    with connect() as conn:
+        if not conn.execute("SELECT 1 FROM fb_pages WHERE id=?", (page_id,)).fetchone():
+            raise HTTPException(404, "Không tìm thấy Page.")
+        conn.execute("""
+          UPDATE fb_pages SET editorial_tone=?, editorial_audience=?,
+            editorial_topics=?, editorial_avoid=?, editorial_guidance=?, updated_at=?
+          WHERE id=?
+        """, (values["editorial_tone"].strip(), values["editorial_audience"].strip(),
+              values["editorial_topics"].strip(), values["editorial_avoid"].strip(),
+              values["editorial_guidance"].strip(), now(), page_id))
+        log(conn, "page.editorial_profile_updated", page_id)
+    return {"ok": True, "page_id": page_id}
 
 
 @router.delete("/pages/{page_id}", dependencies=[Depends(require_hub_key)])
