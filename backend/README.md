@@ -209,3 +209,5 @@ python -m app.facebook_scheduler --once
 ```
 
 The worker checks due queue entries every 60 seconds by default (minimum 10 seconds), revalidates Page enabled state, Page schedule enabled state, draft approval, content snapshot hash, and duplicate history, then changes eligible entries from `queued` to `ready`. Failed checks move the entry to `blocked`. The worker does not call Meta APIs, does not publish, and does not mark drafts as published. A future Meta publishing worker must perform a fresh final validation immediately before sending each post; `ready` is not proof that Facebook accepted a post.
+
+The due worker also re-reads the current draft and Page settings inside a SQLite `BEGIN IMMEDIATE` transaction immediately before promoting a queue item to `ready`. This closes the validation-to-ready race where a draft could be edited after the first check. The transition still does not publish; the future Meta publisher must perform its own final validation before every API request.
