@@ -46,15 +46,14 @@ def test_global_publish_switch_off_does_not_change_ready_queue(tmp_path, monkeyp
     assert state == "ready"
 
 
-def test_page_auto_publish_must_be_enabled_before_claim(tmp_path, monkeypatch):
+def test_page_auto_publish_off_keeps_ready_item_for_later_resume(tmp_path, monkeypatch):
     schedule_id = _seed(tmp_path / "publisher.sqlite3", auto_publish=False)
     monkeypatch.setattr(publisher, "PUBLISH_ENABLED", True)
     assert publisher._claim_due_item(schedule_id) is None
     with hub.connect() as conn:
-        row = conn.execute("SELECT state,publish_error FROM fb_publish_schedule WHERE id=?",
+        row = conn.execute("SELECT state FROM fb_publish_schedule WHERE id=?",
                            (schedule_id,)).fetchone()
-    assert row["state"] == "blocked"
-    assert "tự động đăng" in row["publish_error"]
+    assert row["state"] == "ready"
 
 
 def test_interrupted_publish_is_marked_unknown_not_retried(tmp_path, monkeypatch):
