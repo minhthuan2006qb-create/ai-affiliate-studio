@@ -212,3 +212,44 @@ def test_same_story_is_allowed_on_a_different_page(tmp_path, monkeypatch):
         body="Lịch bắn pháo hoa Đà Nẵng năm 2026 được công bố.",
         confidence=90))
     assert second["review_status"] == "pending"
+
+
+def test_same_story_with_material_new_information_is_allowed_as_update(tmp_path, monkeypatch):
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    url = "https://example.com/events/fireworks"
+    first = hub.create_draft(hub.DraftCreate(
+        page_id="p1", title="Lịch bắn pháo hoa Đà Nẵng 2026",
+        source_url=url,
+        body="Lễ hội pháo hoa quốc tế Đà Nẵng diễn ra vào mùa hè năm 2026 với nhiều đội thi.",
+        confidence=90))
+    hub.review_draft(first["id"], hub.DraftReview(review_status="approved"))
+    updated = hub.create_draft(hub.DraftCreate(
+        page_id="p1", title="Cập nhật lịch pháo hoa Đà Nẵng 2026",
+        source_url=url,
+        body=("Ban tổ chức vừa công bố thêm thông tin mới: đêm khai mạc bắt đầu lúc 20 giờ "
+              "ngày 30 tháng 5, đội tuyển Nhật Bản và Canada tham gia, khu vực khán đài "
+              "ven sông Hàn mở bán vé trực tuyến từ tuần tới."),
+        confidence=90))
+    assert updated["review_status"] == "pending"
+    assert "trùng nội dung" not in updated["review_reason"].lower()
+
+
+def test_same_url_without_material_new_information_stays_held(tmp_path, monkeypatch):
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    url = "https://example.com/events/fireworks"
+    first = hub.create_draft(hub.DraftCreate(
+        page_id="p1", title="Lịch bắn pháo hoa Đà Nẵng 2026",
+        source_url=url,
+        body="Lễ hội pháo hoa quốc tế Đà Nẵng diễn ra vào mùa hè năm 2026 với nhiều đội thi.",
+        confidence=90))
+    hub.review_draft(first["id"], hub.DraftReview(review_status="approved"))
+    repeat = hub.create_draft(hub.DraftCreate(
+        page_id="p1", title="Lịch pháo hoa Đà Nẵng năm 2026",
+        source_url=url,
+        body="Lễ hội pháo hoa quốc tế tại Đà Nẵng diễn ra mùa hè năm 2026 với nhiều đội thi.",
+        confidence=90))
+    assert repeat["review_status"] == "held"
