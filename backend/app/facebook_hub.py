@@ -11,6 +11,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from .duplicate_guard import find_duplicate, remember_approved
+
 router = APIRouter(prefix="/api/facebook-hub", tags=["Facebook Hub"])
 DB_PATH = Path(os.getenv("FACEBOOK_HUB_DB", os.getenv("DATABASE_PATH", str(Path(__file__).resolve().parents[1] / "data" / "jobs.sqlite3"))))
 API_KEY = os.getenv("API_KEY", "")
@@ -334,8 +336,10 @@ def create_draft(payload: DraftCreate):
     with connect() as conn:
         if not conn.execute("SELECT 1 FROM fb_pages WHERE id=?", (payload.page_id,)).fetchone():
             raise HTTPException(404, "Không tìm thấy Page.")
-        status = "pending" if payload.confidence >= 70 else "held"
-        reason = payload.review_reason or ("Đạt ngưỡng sơ bộ; chờ tích hợp xác minh và chính sách đăng." if status == "pending" else "Độ tin cậy dưới ngưỡng 70; giữ lại để kiểm tra.")
+        duplicate = find_duplicate(conn, payload.page_id, payload.title, payload.body, payload.source_url)
+        status = "held" if duplicate else ("pending" if payload.confidence >= 70 else "held")
+        reason = (f"Trùng nội dung với bài đã duyệt: {duplicate['title']}. {duplicate['reason']}" if duplicate
+                  else payload.review_reason or ("Đạt ngưỡng sơ bộ; chờ tích hợp xác minh và chính sách đăng." if status == "pending" else "Độ tin cậy dưới ngưỡng 70; giữ lại để kiểm tra."))
         conn.execute("""INSERT INTO fb_drafts
           (id,page_id,source_name,source_url,title,body,confidence,review_status,review_reason,created_at,updated_at)
           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
@@ -364,9 +368,18 @@ def list_drafts(review_status: str | None = None):
 @router.patch("/drafts/{draft_id}/review", dependencies=[Depends(require_hub_key)])
 def review_draft(draft_id: str, payload: DraftReview):
     with connect() as conn:
-        cur = conn.execute("UPDATE fb_drafts SET review_status=?, review_reason=?, updated_at=? WHERE id=?",
-                           (payload.review_status, payload.review_reason, now(), draft_id))
-        if not cur.rowcount:
+        draft = conn.execute("SELECT * FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
+        if draft is None:
             raise HTTPException(404, "Không tìm thấy bản nháp.")
+        if payload.review_status == "approved":
+            duplicate = find_duplicate(conn, draft["page_id"], draft["title"], draft["body"],
+                                       draft["source_url"], exclude_draft_id=draft_id)
+            if duplicate:
+                raise HTTPException(409, f"Bài có khả năng trùng với nội dung đã duyệt: {duplicate['title']}. {duplicate['reason']}")
+        conn.execute("UPDATE fb_drafts SET review_status=?, review_reason=?, updated_at=? WHERE id=?",
+                     (payload.review_status, payload.review_reason, now(), draft_id))
+        if payload.review_status == "approved":
+            approved = conn.execute("SELECT * FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
+            remember_approved(conn, approved, now())
         log(conn, "draft.reviewed", f"{draft_id}:{payload.review_status}")
     return {"ok": True, "review_status": payload.review_status}
