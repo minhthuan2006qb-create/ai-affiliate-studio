@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import json
 import time
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -87,8 +89,7 @@ def get_token_health():
     return {"pages": [dict(row) for row in rows]}
 
 
-@router.post("/health/check", dependencies=[Depends(require_hub_key)])
-def check_token_health():
+def check_all_tokens():
     with connect() as conn:
         rows = conn.execute("""
             SELECT p.id AS page_id,p.name,t.token_ciphertext
@@ -128,3 +129,34 @@ def check_token_health():
                         "last_checked_at": checked_at, "expires_at": expires_at,
                         "data_access_expires_at": data_expires})
     return {"checked": len(results), "pages": results}
+
+
+@router.post("/health/check", dependencies=[Depends(require_hub_key)])
+def check_token_health():
+    return check_all_tokens()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Facebook Hub Meta token health monitor")
+    parser.add_argument("--once", action="store_true", help="Check all connected Page tokens once")
+    parser.add_argument("--interval-hours", type=float, default=12.0,
+                        help="Background check interval in hours (minimum 1)")
+    args = parser.parse_args()
+    if args.interval_hours < 1:
+        parser.error("--interval-hours không được nhỏ hơn 1 giờ.")
+    init_token_health_db()
+    interval = args.interval_hours * 3600
+    print(f"Meta token health monitor started; interval={args.interval_hours:g} hours", flush=True)
+    while True:
+        try:
+            result = check_all_tokens()
+            print(json.dumps(result, ensure_ascii=False), flush=True)
+        except Exception as exc:
+            print(json.dumps({"status": "error", "message": str(exc)[:300]}, ensure_ascii=False), flush=True)
+        if args.once:
+            break
+        time.sleep(interval)
+
+
+if __name__ == "__main__":
+    main()
