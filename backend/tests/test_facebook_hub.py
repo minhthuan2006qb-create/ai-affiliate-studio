@@ -133,6 +133,8 @@ def test_meta_oauth_callback_encrypts_page_token_and_disconnects(tmp_path, monke
     monkeypatch.setenv("META_TOKEN_ENCRYPTION_KEY", key)
     import app.facebook_meta as meta
     monkeypatch.setattr(meta, "_exchange_code", lambda *args: "user-token-secret")
+    monkeypatch.setattr(meta, "_fetch_granted_permissions",
+                        lambda token: {"pages_show_list", "pages_read_engagement", "pages_manage_posts"})
     monkeypatch.setattr(meta, "_fetch_pages", lambda token: [{
         "id": "123456", "name": "Page OAuth Test",
         "access_token": "page-token-secret", "tasks": ["CREATE_CONTENT"],
@@ -178,6 +180,8 @@ def test_meta_oauth_state_is_single_use(tmp_path, monkeypatch):
     monkeypatch.setenv("META_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
     import app.facebook_meta as meta
     monkeypatch.setattr(meta, "_exchange_code", lambda *args: "user-token")
+    monkeypatch.setattr(meta, "_fetch_granted_permissions",
+                        lambda token: {"pages_show_list", "pages_read_engagement", "pages_manage_posts"})
     monkeypatch.setattr(meta, "_fetch_pages", lambda token: [{
         "id": "789", "name": "Page State Test", "access_token": "page-token",
         "tasks": ["CREATE_CONTENT"],
