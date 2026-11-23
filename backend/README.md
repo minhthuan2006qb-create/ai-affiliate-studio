@@ -182,3 +182,11 @@ Endpoints (all require the Hub API key):
 - `PATCH /api/facebook-hub/schedule/{schedule_id}?state=cancelled`
 
 **Important:** these are planned slots in the local database only. They do not publish to Facebook, do not call Meta APIs, and do not change a draft's review status to published. Meta OAuth and a separate controlled publishing worker are still required for real posting.
+
+
+### Schedule queue safety synchronization
+
+- Revoking a draft's approval (moving it to pending, held, or rejected) automatically cancels its queued or paused slot.
+- Disabling a Page schedule pauses its queued slots without deleting them.
+- Re-enabling the Page restores only slots whose drafts are still approved; stale slots are cancelled.
+- These transitions affect only the internal queue. No Facebook publishing is triggered.
