@@ -56,6 +56,10 @@ def test_three_distinct_hosts_raise_to_pending_not_published(tmp_path, monkeypat
     add_item(path, "i1", "s1", "Đà Nẵng tổ chức lễ hội pháo hoa", "https://news-a.example/a")
     add_item(path, "i2", "s2", "Lễ hội pháo hoa Đà Nẵng tổ chức", "https://news-b.example/b")
     add_item(path, "i3", "s3", "Đà Nẵng tổ chức lễ hội pháo hoa", "https://news-c.example/c")
+    with hub.connect() as conn:
+        for sid, group in [("s1", "publisher-a"), ("s2", "publisher-b"), ("s3", "publisher-c")]:
+            conn.execute("UPDATE fb_sources SET trust_level='established', publisher_group=? WHERE id=?",
+                         (group, sid))
     result = cp.process_item("i1")
     assert result["drafts_created"] == 1
     with hub.connect() as conn:
@@ -92,3 +96,24 @@ def test_matching_items_update_one_candidate_instead_of_duplicate_drafts(tmp_pat
         assert draft["confidence"] == 70
         assert "news-b.example" in draft["body"]
         assert "news-c.example" in draft["body"]
+
+
+def test_conflicting_numeric_claims_force_candidate_to_held(tmp_path, monkeypatch):
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    add_item(path, "i1", "s1", "Đà Nẵng tổ chức sự kiện pháo hoa", "https://news-a.example/a",
+             "Sự kiện dự kiến đón 12 người tham dự.")
+    add_item(path, "i2", "s2", "Sự kiện pháo hoa tại Đà Nẵng", "https://news-b.example/b",
+             "Ban tổ chức cho biết có 15 người tham dự.")
+    add_item(path, "i3", "s3", "Đà Nẵng tổ chức sự kiện pháo hoa", "https://news-c.example/c",
+             "Sự kiện có 12 người tham dự.")
+    with hub.connect() as conn:
+        for sid, group in [("s1", "publisher-a"), ("s2", "publisher-b"), ("s3", "publisher-c")]:
+            conn.execute("UPDATE fb_sources SET trust_level='established', publisher_group=? WHERE id=?",
+                         (group, sid))
+    cp.process_item("i1")
+    with hub.connect() as conn:
+        draft = conn.execute("SELECT * FROM fb_drafts").fetchone()
+        assert draft["review_status"] == "held"
+        assert "mâu thuẫn" in draft["review_reason"].lower()
