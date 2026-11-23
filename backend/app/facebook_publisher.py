@@ -11,8 +11,10 @@ import httpx
 from fastapi import APIRouter, Depends
 
 from .facebook_hub import connect, log, now, require_hub_key
-from .facebook_meta import GRAPH_BASE, _config, decrypt_token
-from .facebook_scheduler import draft_content_hash
+from .facebook_meta import GRAPH_BASE, _config, decrypt_token, init_meta_oauth_db
+from .facebook_scheduler import draft_content_hash, init_scheduler_db
+from .facebook_token_health import init_token_health_db
+from .facebook_hub import init_hub_db
 from .facebook_token_health import _evaluate, inspect_token
 from .duplicate_guard import find_duplicate
 
@@ -22,6 +24,10 @@ REQUIRED_SCOPES = {"pages_show_list", "pages_read_engagement", "pages_manage_pos
 
 
 def init_publisher_db() -> None:
+    init_hub_db()
+    init_meta_oauth_db()
+    init_scheduler_db()
+    init_token_health_db()
     with connect() as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(fb_publish_schedule)")}
         for name, declaration in {
@@ -160,6 +166,9 @@ def _preflight_and_publish(item: dict) -> dict:
 
 def process_ready_items(limit: int = 10) -> dict:
     init_publisher_db()
+    if not PUBLISH_ENABLED:
+        return {"processed": 0, "disabled": True,
+                "note": "META_PUBLISHING_ENABLED chưa bật; không thay đổi lịch và không gửi bài."}
     with connect() as conn:
         # A process crash after claiming an item leaves an ambiguous result.
         # Convert it to unknown instead of risking a duplicate post on restart.
