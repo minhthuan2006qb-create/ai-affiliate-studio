@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .facebook_hub import connect, init_hub_db, log, now
+from .duplicate_guard import find_duplicate
 
 
 WINDOW_HOURS = 72
@@ -210,6 +211,23 @@ def process_item(item_id: str) -> dict[str, object]:
             matched = collect_candidates(conn, {**dict(item), "page_id": page["id"]})
             score, hosts, rationale, trusted_groups, official_sources, conflicts, stale, future_dated = preliminary_signal(item, matched)
             matched_ids = [row["id"] for row in matched]
+            duplicate = find_duplicate(conn, page["id"], item["title"], item["summary"] or item["title"], item["item_url"])
+            if duplicate:
+                rationale = f"{rationale} Trùng nội dung với bài đã duyệt: {duplicate['title']}. {duplicate['reason']}"
+                draft_id = create_candidate_draft(conn, item, page["id"], score, hosts, rationale)
+                conn.execute("UPDATE fb_drafts SET review_status='held', review_reason=?, updated_at=? WHERE id=?",
+                             (rationale, now(), draft_id))
+                record_id = hashlib.sha256(f"process:{item_id}:{page['id']}".encode()).hexdigest()
+                conn.execute("""
+                  INSERT OR IGNORE INTO fb_item_processing
+                  (id,item_id,page_id,signal_score,matched_hosts,rationale,independent_groups,
+                   official_sources,conflict_flags,draft_id,created_at)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                """, (record_id, item_id, page["id"], score, ",".join(hosts), rationale,
+                      trusted_groups, official_sources, " | ".join(conflicts), draft_id, now()))
+                results.append({"page_id": page["id"], "score": score, "status": "held"})
+                created += 1
+                continue
             existing = None
             if matched_ids:
                 marks = ",".join("?" for _ in matched_ids)
