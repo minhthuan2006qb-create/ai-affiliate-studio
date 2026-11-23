@@ -27,6 +27,7 @@ ALLOWED_ORIGINS = [
 from .facebook_hub import router as facebook_hub_router, require_hub_key, connect as hub_connect
 from .facebook_scheduler import router as facebook_scheduler_router
 from .facebook_meta import router as facebook_meta_router
+from .facebook_token_health import router as facebook_token_health_router
 
 app = FastAPI(
     title="AI Affiliate Studio API",
@@ -37,6 +38,7 @@ app = FastAPI(
 app.include_router(facebook_hub_router)
 app.include_router(facebook_scheduler_router)
 app.include_router(facebook_meta_router)
+app.include_router(facebook_token_health_router)
 
 app.add_middleware(
     CORSMiddleware,
