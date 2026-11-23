@@ -59,17 +59,15 @@ def _claim_due_item(schedule_id: str) -> dict | None:
         """, (schedule_id,)).fetchone()
         if row is None:
             return None
+        # Temporary operational gates leave the row ready so it can resume
+        # automatically when the Page is re-enabled or reconnected.
+        if (datetime.fromisoformat(row["planned_at"]) > datetime.now(timezone.utc) or
+            not row["page_enabled"] or not row["auto_publish"] or not row["schedule_enabled"] or
+            row["connection_status"] != "connected" or not row["meta_page_id"] or
+            row["token_meta_page_id"] != row["meta_page_id"] or not row["token_ciphertext"]):
+            return None
         reason = None
-        if datetime.fromisoformat(row["planned_at"]) > datetime.now(timezone.utc):
-            reason = "Chưa đến giờ đăng."
-        elif not PUBLISH_ENABLED:
-            reason = "META_PUBLISHING_ENABLED chưa được bật ở backend."
-        elif not row["page_enabled"] or not row["auto_publish"] or not row["schedule_enabled"]:
-            reason = "Page đang tắt hoặc chưa bật tự động đăng."
-        elif (row["connection_status"] != "connected" or not row["meta_page_id"] or
-              row["token_meta_page_id"] != row["meta_page_id"] or not row["token_ciphertext"]):
-            reason = "Page chưa có kết nối Meta hợp lệ."
-        elif row["review_status"] != "approved" or row["draft_page_id"] != row["page_id"]:
+        if row["review_status"] != "approved" or row["draft_page_id"] != row["page_id"]:
             reason = "Bản nháp không còn được duyệt hoặc không thuộc Page này."
         elif not row["content_hash"] or draft_content_hash(row) != row["content_hash"]:
             reason = "Nội dung đã thay đổi sau khi duyệt/xếp lịch."
