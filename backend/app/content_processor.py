@@ -71,7 +71,7 @@ def ensure_processing_schema() -> None:
 def collect_candidates(conn: sqlite3.Connection, item: sqlite3.Row) -> list[sqlite3.Row]:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=WINDOW_HOURS)).isoformat()
     rows = conn.execute("""
-      SELECT i.id, i.title, i.item_url, i.summary, i.first_seen_at,
+      SELECT i.id, i.source_id, i.title, i.item_url, i.summary, i.first_seen_at,
              s.name AS source_name, s.trust_level, s.publisher_group, s.is_official
       FROM fb_source_items i
       JOIN fb_sources s ON s.id=i.source_id
@@ -114,7 +114,9 @@ def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[i
     hosts = {host_of(row["item_url"]) for row in rows}
     hosts.discard("")
     groups = {publisher_group(row) for row in rows if publisher_group(row)}
-    official = sum(1 for row in rows if bool(row["is_official"]) or row["trust_level"] == "official")
+    official_source_ids = {row["source_id"] for row in rows
+                           if bool(row["is_official"]) or row["trust_level"] == "official"}
+    official = len(official_source_ids)
     trusted_groups = {publisher_group(row) for row in rows
                       if publisher_group(row) and row["trust_level"] in {"official", "established"}}
     score = {0: 0, 1: 35, 2: 55, 3: 70}.get(len(hosts), 75)
@@ -123,7 +125,7 @@ def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[i
     conflicts = detect_numeric_conflicts(item, matched)
     reasons = [
         f"{len(hosts)} hostname khác nhau",
-        f"{len(groups)} nhóm chủ quản/nhà xuất bản độc lập được khai báo",
+        f"{len(groups)} nhóm xuất bản (nhóm khai báo hoặc hostname dự phòng; chưa chứng minh độc lập)",
         f"{len(trusted_groups)} nhóm có mức tin cậy đã cấu hình",
         f"{official} nguồn được đánh dấu chính thức",
     ]
