@@ -245,7 +245,7 @@ def update_schedule_item(schedule_id: str, state: Literal["cancelled"]):
     with connect() as conn:
         cur = conn.execute("""
           UPDATE fb_publish_schedule SET state=?, updated_at=?
-          WHERE id=? AND state='queued'
+          WHERE id=? AND state IN ('queued','ready')
         """, (state, now(), schedule_id))
         if not cur.rowcount:
             raise HTTPException(404, "Không tìm thấy lịch đang chờ.")
@@ -269,8 +269,8 @@ def validate_schedule_item(schedule_id: str):
         """, (schedule_id,)).fetchone()
         if row is None:
             raise HTTPException(404, "Không tìm thấy lịch đăng.")
-        if row["state"] != "queued":
-            return {"eligible": False, "state": row["state"], "reason": "Lịch không còn ở trạng thái chờ."}
+        if row["state"] not in {"queued", "ready"}:
+            return {"eligible": False, "state": row["state"], "reason": "Lịch không còn ở trạng thái có thể kiểm tra."}
         planned = datetime.fromisoformat(row["planned_at"])
         if planned > datetime.now(timezone.utc):
             return {"eligible": False, "state": "queued", "reason": "Chưa đến giờ dự kiến."}
@@ -296,8 +296,8 @@ def validate_schedule_item(schedule_id: str):
             log(conn, "schedule.validation_blocked", f"{schedule_id}: {reason}", "warning")
             return {"eligible": False, "state": "blocked", "reason": reason}
         log(conn, "schedule.validation_passed", schedule_id)
-        return {"eligible": True, "state": "queued",
-                "reason": "Đạt kiểm tra trước đăng; chưa có bài nào được gửi lên Facebook."}
+        return {"eligible": True, "state": row["state"],
+                "reason": "Đạt kiểm tra an toàn; chưa có bài nào được gửi lên Facebook."}
 
 
 def process_due_schedules(limit: int = 50) -> dict:
