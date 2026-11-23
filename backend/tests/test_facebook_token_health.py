@@ -1,7 +1,20 @@
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
-from test_facebook_hub import load_hub_app
+import importlib
+
+
+def load_hub_app(tmp_path, monkeypatch):
+    monkeypatch.setenv("API_KEY", "video-test-key")
+    monkeypatch.setenv("FACEBOOK_HUB_API_KEY", "hub-test-key")
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "jobs.sqlite3"))
+    monkeypatch.setenv("FACEBOOK_HUB_DB", str(tmp_path / "hub.sqlite3"))
+    import app.facebook_hub as hub
+    importlib.reload(hub)
+    import app.main as main
+    importlib.reload(main)
+    return main
+
 
 
 def _prepare_page(client, monkeypatch, tmp_path):
