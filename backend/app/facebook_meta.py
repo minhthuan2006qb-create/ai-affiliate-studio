@@ -4,12 +4,13 @@ import hashlib
 import os
 import secrets
 import sqlite3
+import hmac
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
 from .facebook_hub import connect, log, now, require_hub_key
@@ -133,11 +134,16 @@ def begin_meta_oauth():
         "client_id": app_id, "redirect_uri": redirect_uri, "state": state,
         "response_type": "code", "scope": SCOPES,
     })
-    return RedirectResponse(f"{DIALOG_BASE}/{GRAPH_VERSION}/dialog/oauth?{params}", status_code=302)
+    response = RedirectResponse(f"{DIALOG_BASE}/{GRAPH_VERSION}/dialog/oauth?{params}", status_code=302)
+    response.set_cookie("fb_meta_oauth_state", state, max_age=600, httponly=True,
+                        secure=redirect_uri.startswith("https://"), samesite="lax",
+                        path="/api/facebook-hub/meta")
+    return response
 
 
 @router.get("/callback")
 def finish_meta_oauth(
+    request: Request,
     code: str | None = Query(default=None, max_length=4096),
     state: str | None = Query(default=None, max_length=256),
     error: str | None = Query(default=None, max_length=120),
@@ -146,6 +152,9 @@ def finish_meta_oauth(
         raise HTTPException(400, "Bạn đã hủy hoặc Meta từ chối quyền kết nối.")
     if not code or not state:
         raise HTTPException(400, "Thiếu mã xác thực hoặc state OAuth.")
+    browser_state = request.cookies.get("fb_meta_oauth_state", "")
+    if not browser_state or not hmac.compare_digest(browser_state, state):
+        raise HTTPException(400, "OAuth state không khớp phiên trình duyệt. Hãy bắt đầu kết nối lại.")
     app_id, app_secret, redirect_uri, _ = _config()
     state_hash = hashlib.sha256(state.encode()).hexdigest()
     stamp = datetime.now(timezone.utc).isoformat()
@@ -191,8 +200,11 @@ def finish_meta_oauth(
                 (page_id, item["id"], encrypt_token(item["access_token"]), SCOPES, now(), now()))
             connected.append({"id": page_id, "name": item["name"]})
         log(conn, "meta.oauth_connected", f"connected={len(connected)}; skipped={len(skipped)}")
-    return {"ok": True, "connected_pages": connected, "skipped_pages": skipped,
-            "message": "Đã lưu token Page ở dạng mã hóa phía máy chủ. Chưa tự đăng bài."}
+    from fastapi.responses import JSONResponse
+    response = JSONResponse({"ok": True, "connected_pages": connected, "skipped_pages": skipped,
+            "message": "Đã lưu token Page ở dạng mã hóa phía máy chủ. Chưa tự đăng bài."})
+    response.delete_cookie("fb_meta_oauth_state", path="/api/facebook-hub/meta")
+    return response
 
 
 @router.get("/status", dependencies=[Depends(require_hub_key)])
