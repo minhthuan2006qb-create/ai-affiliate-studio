@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
@@ -10,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from .facebook_hub import connect, log, now, require_hub_key
+from .duplicate_guard import find_duplicate
 
 router = APIRouter(prefix="/api/facebook-hub", tags=["Facebook Hub Scheduler"],
                    dependencies=[Depends(require_hub_key)])
@@ -41,6 +43,20 @@ def init_scheduler_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_fb_schedule_page_time
           ON fb_publish_schedule(page_id, planned_at);
         """)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(fb_publish_schedule)")}
+        if "content_hash" not in columns:
+            conn.execute("ALTER TABLE fb_publish_schedule ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''")
+
+
+def draft_content_hash(draft) -> str:
+    """Stable snapshot of the exact content approved and queued for this slot."""
+    payload = {
+        "title": draft["title"] or "",
+        "body": draft["body"] or "",
+        "source_url": draft["source_url"] or "",
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 @router.on_event("startup")
@@ -194,9 +210,11 @@ def build_schedule(page_id: str, payload: PlanRequest):
             queue_id = str(uuid.uuid4())
             planned = chosen.astimezone(timezone.utc).isoformat()
             conn.execute("""
-              INSERT INTO fb_publish_schedule(id,page_id,draft_id,planned_at,state,created_at,updated_at)
-              VALUES(?,?,?,?,'queued',?,?)
-            """, (queue_id, page_id, draft["id"], planned, now(), now()))
+              INSERT INTO fb_publish_schedule
+                (id,page_id,draft_id,planned_at,state,created_at,updated_at,content_hash)
+              VALUES(?,?,?,?,'queued',?,?,?)
+            """, (queue_id, page_id, draft["id"], planned, now(), now(),
+                  draft_content_hash(draft)))
             occupied.append(chosen)
             created.append({"id": queue_id, "draft_id": draft["id"], "title": draft["title"],
                             "planned_at": planned, "state": "queued"})
@@ -231,3 +249,47 @@ def update_schedule_item(schedule_id: str, state: Literal["cancelled"]):
             raise HTTPException(404, "Không tìm thấy lịch đang chờ.")
         log(conn, "schedule.cancelled", schedule_id)
     return {"ok": True, "state": state}
+
+
+@router.post("/schedule/{schedule_id}/validate")
+def validate_schedule_item(schedule_id: str):
+    """Safety gate only: checks eligibility and never publishes to Facebook."""
+    init_scheduler_db()
+    with connect() as conn:
+        row = conn.execute("""
+          SELECT q.*, d.title, d.body, d.source_url, d.review_status, d.page_id AS draft_page_id,
+                 p.enabled AS page_enabled
+          FROM fb_publish_schedule q
+          JOIN fb_drafts d ON d.id=q.draft_id
+          JOIN fb_pages p ON p.id=q.page_id
+          WHERE q.id=?
+        """, (schedule_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Không tìm thấy lịch đăng.")
+        if row["state"] != "queued":
+            return {"eligible": False, "state": row["state"], "reason": "Lịch không còn ở trạng thái chờ."}
+        planned = datetime.fromisoformat(row["planned_at"])
+        if planned > datetime.now(timezone.utc):
+            return {"eligible": False, "state": "queued", "reason": "Chưa đến giờ dự kiến."}
+        reason = None
+        if not row["page_enabled"]:
+            reason = "Page đang bị tắt."
+        elif row["review_status"] != "approved":
+            reason = "Bản nháp không còn được duyệt."
+        elif row["draft_page_id"] != row["page_id"]:
+            reason = "Bản nháp không thuộc Page trong lịch."
+        elif not row["content_hash"] or draft_content_hash(row) != row["content_hash"]:
+            reason = "Nội dung đã thay đổi sau khi xếp lịch; cần kiểm tra và xếp lịch lại."
+        else:
+            duplicate = find_duplicate(conn, row["page_id"], row["title"], row["body"],
+                                       row["source_url"], exclude_draft_id=row["draft_id"])
+            if duplicate:
+                reason = f"Nội dung có khả năng trùng bài đã duyệt: {duplicate['title']}."
+        if reason:
+            conn.execute("UPDATE fb_publish_schedule SET state='blocked', updated_at=? WHERE id=?",
+                         (now(), schedule_id))
+            log(conn, "schedule.validation_blocked", f"{schedule_id}: {reason}", "warning")
+            return {"eligible": False, "state": "blocked", "reason": reason}
+        log(conn, "schedule.validation_passed", schedule_id)
+        return {"eligible": True, "state": "queued",
+                "reason": "Đạt kiểm tra trước đăng; chưa có bài nào được gửi lên Facebook."}
