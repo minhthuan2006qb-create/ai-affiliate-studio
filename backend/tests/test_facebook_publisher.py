@@ -13,8 +13,8 @@ def _seed(path, auto_publish=False):
     stamp = hub.now()
     with hub.connect() as conn:
         conn.execute("""
-          INSERT INTO fb_pages(id,name,meta_page_id,auto_publish,created_at,updated_at)
-          VALUES('p1','Page test','meta-p1',?,?,?)
+          INSERT INTO fb_pages(id,name,meta_page_id,connection_status,auto_publish,created_at,updated_at)
+          VALUES('p1','Page test','meta-p1','connected',?,?,?)
         """, (int(auto_publish), stamp, stamp))
         conn.execute("""
           INSERT INTO fb_drafts
