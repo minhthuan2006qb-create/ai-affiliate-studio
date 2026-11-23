@@ -190,3 +190,22 @@ Endpoints (all require the Hub API key):
 - Disabling a Page schedule pauses its queued slots without deleting them.
 - Re-enabling the Page restores only slots whose drafts are still approved; stale slots are cancelled.
 - These transitions affect only the internal queue. No Facebook publishing is triggered.
+
+
+
+### Due-schedule safety worker (internal only)
+
+Run this as a separate backend process using the same persistent SQLite database as the API:
+
+```bash
+cd backend
+python -m app.facebook_scheduler
+```
+
+For a one-time check:
+
+```bash
+python -m app.facebook_scheduler --once
+```
+
+The worker checks due queue entries every 60 seconds by default (minimum 10 seconds), revalidates Page enabled state, Page schedule enabled state, draft approval, content snapshot hash, and duplicate history, then changes eligible entries from `queued` to `ready`. Failed checks move the entry to `blocked`. The worker does not call Meta APIs, does not publish, and does not mark drafts as published. A future Meta publishing worker must perform a fresh final validation immediately before sending each post; `ready` is not proof that Facebook accepted a post.
