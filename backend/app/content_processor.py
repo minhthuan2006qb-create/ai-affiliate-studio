@@ -109,6 +109,19 @@ def detect_numeric_conflicts(item: sqlite3.Row, matched: list[sqlite3.Row]) -> l
             for unit, values in observations.items() if len(values) > 1]
 
 
+def publication_age_hours(item: sqlite3.Row) -> float | None:
+    raw = item["published_at"] if "published_at" in item.keys() else None
+    if not raw:
+        return None
+    try:
+        published = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if published.tzinfo is None:
+            published = published.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - published.astimezone(timezone.utc)).total_seconds() / 3600
+    except (TypeError, ValueError):
+        return None
+
+
 def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[int, list[str], str, int, int, list[str]]:
     rows = [item, *matched]
     hosts = {host_of(row["item_url"]) for row in rows}
@@ -124,11 +137,19 @@ def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[i
     if not (item["summary"] or "").strip():
         score = min(score, 55)
     conflicts = detect_numeric_conflicts(item, matched)
+    age_hours = publication_age_hours(item)
+    stale = age_hours is not None and age_hours > WINDOW_HOURS
+    future_dated = age_hours is not None and age_hours < -6
+    if stale:
+        conflicts.append(f"Tin đã cũ: thời điểm xuất bản cách hiện tại khoảng {int(age_hours)} giờ")
+    if future_dated:
+        conflicts.append(f"Thời điểm xuất bản nằm trong tương lai khoảng {int(abs(age_hours))} giờ")
     reasons = [
         f"{len(hosts)} hostname khác nhau",
         f"{len(groups)} nhóm xuất bản (nhóm khai báo hoặc hostname dự phòng; chưa chứng minh độc lập)",
         f"{len(trusted_groups)} nhóm có mức tin cậy đã cấu hình",
         f"{official} nguồn được đánh dấu chính thức",
+        (f"Tuổi tin: khoảng {int(age_hours)} giờ" if age_hours is not None else "Không có thời điểm xuất bản hợp lệ; không thể đánh giá độ mới"),
     ]
     if conflicts:
         reasons.append("CẢNH BÁO MÂU THUẪN: " + "; ".join(conflicts))
@@ -209,7 +230,7 @@ def process_item(item_id: str) -> dict[str, object]:
                             body += f"\\nNguồn đối chiếu bổ sung: {source}."
                     status = draft["review_status"]
                     if status in {"pending", "held"}:
-                        status = "pending" if score >= 70 and trusted_groups >= 2 and not conflicts else "held"
+                        status = "pending" if score >= 70 and trusted_groups >= 2 and not conflicts and not stale and not future_dated else "held"
                     conn.execute(
                         """UPDATE fb_drafts SET body=?, confidence=?, review_status=?,
                            review_reason=?, updated_at=? WHERE id=?""",
@@ -217,17 +238,20 @@ def process_item(item_id: str) -> dict[str, object]:
                     )
             else:
                 draft_id = create_candidate_draft(conn, item, page["id"], score, hosts, rationale)
-                candidate_status = "pending" if score >= 70 and trusted_groups >= 2 and not conflicts else "held"
+                candidate_status = "pending" if score >= 70 and trusted_groups >= 2 and not conflicts and not stale and not future_dated else "held"
                 conn.execute("UPDATE fb_drafts SET review_status=?, review_reason=?, updated_at=? WHERE id=?",
                              (candidate_status, rationale, now(), draft_id))
             record_id = hashlib.sha256(f"process:{item_id}:{page['id']}".encode()).hexdigest()
+            final_status = conn.execute("SELECT review_status FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
+            final_status = final_status["review_status"] if final_status else "held"
             conn.execute("""
               INSERT OR IGNORE INTO fb_item_processing
-              (id,item_id,page_id,signal_score,matched_hosts,rationale,draft_id,created_at)
-              VALUES(?,?,?,?,?,?,?,?)
-            """, (record_id, item_id, page["id"], score, ",".join(hosts), rationale, draft_id, now()))
-            results.append({"page_id": page["id"], "score": score,
-                            "status": "pending" if score >= 70 else "held"})
+              (id,item_id,page_id,signal_score,matched_hosts,rationale,independent_groups,
+               official_sources,conflict_flags,draft_id,created_at)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            """, (record_id, item_id, page["id"], score, ",".join(hosts), rationale,
+                  trusted_groups, official_sources, " | ".join(conflicts), draft_id, now()))
+            results.append({"page_id": page["id"], "score": score, "status": final_status})
             created += 1
         if created:
             log(conn, "source_item.processed",
