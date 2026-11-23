@@ -48,6 +48,9 @@ def ensure_processing_schema() -> None:
           signal_score INTEGER NOT NULL,
           matched_hosts TEXT NOT NULL,
           rationale TEXT NOT NULL,
+          independent_groups INTEGER NOT NULL DEFAULT 1,
+          official_sources INTEGER NOT NULL DEFAULT 0,
+          conflict_flags TEXT NOT NULL DEFAULT '',
           draft_id TEXT,
           created_at TEXT NOT NULL,
           UNIQUE(item_id, page_id)
@@ -55,12 +58,21 @@ def ensure_processing_schema() -> None:
         CREATE INDEX IF NOT EXISTS idx_fb_item_processing_created
           ON fb_item_processing(created_at DESC);
         """)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(fb_item_processing)")}
+        for column, declaration in {
+            "independent_groups": "INTEGER NOT NULL DEFAULT 1",
+            "official_sources": "INTEGER NOT NULL DEFAULT 0",
+            "conflict_flags": "TEXT NOT NULL DEFAULT ''",
+        }.items():
+            if column not in columns:
+                conn.execute(f"ALTER TABLE fb_item_processing ADD COLUMN {column} {declaration}")
 
 
 def collect_candidates(conn: sqlite3.Connection, item: sqlite3.Row) -> list[sqlite3.Row]:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=WINDOW_HOURS)).isoformat()
     rows = conn.execute("""
-      SELECT i.id, i.title, i.item_url, i.summary, i.first_seen_at, s.name AS source_name
+      SELECT i.id, i.title, i.item_url, i.summary, i.first_seen_at,
+             s.name AS source_name, s.trust_level, s.publisher_group, s.is_official
       FROM fb_source_items i
       JOIN fb_sources s ON s.id=i.source_id
       JOIN fb_page_sources ps ON ps.source_id=i.source_id
@@ -75,29 +87,57 @@ def collect_candidates(conn: sqlite3.Connection, item: sqlite3.Row) -> list[sqli
     return matched
 
 
-def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[int, list[str], str]:
-    hosts = {host_of(item["item_url"])}
-    for row in matched:
-        host = host_of(row["item_url"])
-        if host:
-            hosts.add(host)
+def publisher_group(row: sqlite3.Row | dict) -> str:
+    configured = (row["publisher_group"] or "").strip().lower()
+    return configured or host_of(row["item_url"])
+
+
+def detect_numeric_conflicts(item: sqlite3.Row, matched: list[sqlite3.Row]) -> list[str]:
+    # Conservative metadata heuristic: flag differing values attached to the same unit.
+    # This is a review warning, not semantic fact-checking.
+    patterns = [
+        re.compile(r"(?<!\\w)(\\d+(?:[.,]\\d+)?)\\s*(%|triệu|tỷ|người|km|giờ|ngày|độ|đồng|lần|ca)\\b", re.I),
+    ]
+    observations: dict[str, set[str]] = {}
+    for row in [item, *matched]:
+        text = f"{row['title'] or ''} {row['summary'] or ''}".lower()
+        for pattern in patterns:
+            for value, unit in pattern.findall(text):
+                key = unit.lower()
+                observations.setdefault(key, set()).add(value.replace(",", "."))
+    return [f"Các nguồn nêu số liệu khác nhau cho đơn vị '{unit}': {', '.join(sorted(values))}"
+            for unit, values in observations.items() if len(values) > 1]
+
+
+def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[int, list[str], str, int, int, list[str]]:
+    rows = [item, *matched]
+    hosts = {host_of(row["item_url"]) for row in rows}
     hosts.discard("")
-    count = len(hosts)
-    # This is metadata coverage only. It is deliberately not presented as fact-checking.
-    score = {0: 0, 1: 35, 2: 55, 3: 70}.get(count, 75)
-    has_summary = bool((item["summary"] or "").strip())
-    if not has_summary:
+    groups = {publisher_group(row) for row in rows if publisher_group(row)}
+    official = sum(1 for row in rows if bool(row["is_official"]) or row["trust_level"] == "official")
+    trusted_groups = {publisher_group(row) for row in rows
+                      if publisher_group(row) and row["trust_level"] in {"official", "established"}}
+    score = {0: 0, 1: 35, 2: 55, 3: 70}.get(len(hosts), 75)
+    if not (item["summary"] or "").strip():
         score = min(score, 55)
-    rationale = f"Ghi nhận {count} hostname khác nhau trong cửa sổ {WINDOW_HOURS} giờ; "
-    rationale += "có trích yếu RSS." if has_summary else "thiếu trích yếu RSS."
-    rationale += " Điểm này chỉ đo độ phủ metadata, không xác minh sự thật hoặc tính độc lập của nguồn."
-    return score, sorted(hosts), rationale
+    conflicts = detect_numeric_conflicts(item, matched)
+    reasons = [
+        f"{len(hosts)} hostname khác nhau",
+        f"{len(groups)} nhóm chủ quản/nhà xuất bản độc lập được khai báo",
+        f"{len(trusted_groups)} nhóm có mức tin cậy đã cấu hình",
+        f"{official} nguồn được đánh dấu chính thức",
+    ]
+    if conflicts:
+        reasons.append("CẢNH BÁO MÂU THUẪN: " + "; ".join(conflicts))
+    reasons.append("Điểm metadata không phải xác minh sự thật; hostname không chứng minh tính độc lập.")
+    rationale = ". ".join(reasons)
+    return score, sorted(hosts), rationale, len(trusted_groups), official, conflicts
 
 
 def create_candidate_draft(conn: sqlite3.Connection, item: sqlite3.Row, page_id: str,
                            score: int, hosts: list[str], rationale: str) -> str:
     draft_id = hashlib.sha256(f"draft:{item['id']}:{page_id}".encode()).hexdigest()
-    status = "pending" if score >= 70 else "held"
+    status = "held"  # new candidates require independent trusted groups and no conflict warning
     source_name = item["source_name"]
     source_url = item["item_url"]
     summary = (item["summary"] or "").strip()
@@ -126,7 +166,7 @@ def process_item(item_id: str) -> dict[str, object]:
     created = 0
     with connect() as conn:
         item = conn.execute("""
-          SELECT i.*, s.name AS source_name
+          SELECT i.*, s.name AS source_name, s.trust_level, s.publisher_group, s.is_official
           FROM fb_source_items i JOIN fb_sources s ON s.id=i.source_id
           WHERE i.id=?
         """, (item_id,)).fetchone()
@@ -143,7 +183,7 @@ def process_item(item_id: str) -> dict[str, object]:
                             (item_id, page["id"])).fetchone():
                 continue
             matched = collect_candidates(conn, {**dict(item), "page_id": page["id"]})
-            score, hosts, rationale = preliminary_signal(item, matched)
+            score, hosts, rationale, trusted_groups, official_sources, conflicts = preliminary_signal(item, matched)
             matched_ids = [row["id"] for row in matched]
             existing = None
             if matched_ids:
@@ -166,7 +206,7 @@ def process_item(item_id: str) -> dict[str, object]:
                             body += f"\\nNguồn đối chiếu bổ sung: {source}."
                     status = draft["review_status"]
                     if status in {"pending", "held"}:
-                        status = "pending" if score >= 70 else "held"
+                        status = "pending" if score >= 70 and trusted_groups >= 2 and not conflicts else "held"
                     conn.execute(
                         """UPDATE fb_drafts SET body=?, confidence=?, review_status=?,
                            review_reason=?, updated_at=? WHERE id=?""",
