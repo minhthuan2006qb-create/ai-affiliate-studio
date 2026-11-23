@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
-
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -111,7 +109,7 @@ def check_token_health():
                         expires_at=?,data_access_expires_at=?
                     WHERE page_id=?
                 """, (status, message, checked_at, expires_at, data_expires, row["page_id"]))
-                if status == "invalid":
+                if status in {"invalid", "missing_permissions"}:
                     conn.execute("""UPDATE fb_pages SET connection_status='needs_reconnect',
                         auto_publish=0,updated_at=? WHERE id=?""", (checked_at, row["page_id"]))
                 elif status in {"healthy", "expiring"}:
