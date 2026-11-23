@@ -59,7 +59,7 @@ def find_duplicate(conn: sqlite3.Connection, page_id: str, title: str, body: str
         if canonical and row["canonical_url"] and canonical == row["canonical_url"]:
             return {"draft_id": row["draft_id"], "title": row["title"], "reason": "Đường dẫn nguồn đã được dùng trong một bài đã duyệt trên Page này."}
         score = similarity(candidate, f"{row['title']} {row['body']}")
-        if score >= 0.78:
+        if score >= 0.68:
             return {"draft_id": row["draft_id"], "title": row["title"], "reason": f"Nội dung gần trùng bài đã duyệt (độ tương đồng {round(score * 100)}%)."}
     return None
 
