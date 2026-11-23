@@ -134,3 +134,44 @@ def test_page_pause_and_resume_suspends_only_approved_queue_items(tmp_path):
         row = conn.execute("SELECT state FROM fb_publish_schedule WHERE draft_id=?",
                            (draft_id,)).fetchone()
     assert row["state"] == "queued"
+
+
+
+def _make_due(schedule_id):
+    with hub.connect() as conn:
+        conn.execute("UPDATE fb_publish_schedule SET planned_at=? WHERE id=?",
+                     ("2000-01-01T00:00:00+00:00", schedule_id))
+
+
+def test_due_schedule_passes_safety_validation_when_unchanged(tmp_path):
+    path = tmp_path / "scheduler.sqlite3"
+    seed_page(path)
+    add_draft("p1", "approved", "Bài đủ điều kiện kiểm tra")
+    configure()
+    planned = scheduler.build_schedule("p1", scheduler.PlanRequest(days=7))
+    schedule_id = planned["created"][0]["id"]
+    _make_due(schedule_id)
+    result = scheduler.validate_schedule_item(schedule_id)
+    assert result["eligible"] is True
+    assert result["state"] == "queued"
+    assert "chưa có bài nào" in result["reason"]
+
+
+def test_changed_content_is_blocked_before_publish(tmp_path):
+    path = tmp_path / "scheduler.sqlite3"
+    seed_page(path)
+    draft_id = add_draft("p1", "approved", "Bài cần kiểm tra thay đổi")
+    configure()
+    planned = scheduler.build_schedule("p1", scheduler.PlanRequest(days=7))
+    schedule_id = planned["created"][0]["id"]
+    _make_due(schedule_id)
+    with hub.connect() as conn:
+        conn.execute("UPDATE fb_drafts SET body=? WHERE id=?",
+                     ("Nội dung đã bị sửa sau khi xếp lịch và không còn giống bản duyệt.", draft_id))
+    result = scheduler.validate_schedule_item(schedule_id)
+    assert result["eligible"] is False
+    assert result["state"] == "blocked"
+    with hub.connect() as conn:
+        state = conn.execute("SELECT state FROM fb_publish_schedule WHERE id=?",
+                             (schedule_id,)).fetchone()["state"]
+    assert state == "blocked"
