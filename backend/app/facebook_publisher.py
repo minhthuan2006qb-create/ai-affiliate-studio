@@ -48,11 +48,13 @@ def _claim_due_item(schedule_id: str) -> dict | None:
           SELECT q.*,d.title,d.body,d.source_url,d.review_status,d.page_id AS draft_page_id,
                  p.name AS page_name,p.meta_page_id,p.enabled AS page_enabled,
                  p.auto_publish, p.connection_status,
-                 t.token_ciphertext,t.granted_scopes
+                 t.meta_page_id AS token_meta_page_id,t.token_ciphertext,t.granted_scopes,
+                 COALESCE(ss.enabled,0) AS schedule_enabled
           FROM fb_publish_schedule q
           JOIN fb_drafts d ON d.id=q.draft_id
           JOIN fb_pages p ON p.id=q.page_id
           LEFT JOIN fb_meta_page_tokens t ON t.page_id=p.id
+          LEFT JOIN fb_page_schedule_settings ss ON ss.page_id=p.id
           WHERE q.id=? AND q.state='ready'
         """, (schedule_id,)).fetchone()
         if row is None:
@@ -62,9 +64,10 @@ def _claim_due_item(schedule_id: str) -> dict | None:
             reason = "Chưa đến giờ đăng."
         elif not PUBLISH_ENABLED:
             reason = "META_PUBLISHING_ENABLED chưa được bật ở backend."
-        elif not row["page_enabled"] or not row["auto_publish"]:
+        elif not row["page_enabled"] or not row["auto_publish"] or not row["schedule_enabled"]:
             reason = "Page đang tắt hoặc chưa bật tự động đăng."
-        elif row["connection_status"] != "connected" or not row["meta_page_id"] or not row["token_ciphertext"]:
+        elif (row["connection_status"] != "connected" or not row["meta_page_id"] or
+              row["token_meta_page_id"] != row["meta_page_id"] or not row["token_ciphertext"]):
             reason = "Page chưa có kết nối Meta hợp lệ."
         elif row["review_status"] != "approved" or row["draft_page_id"] != row["page_id"]:
             reason = "Bản nháp không còn được duyệt hoặc không thuộc Page này."
@@ -95,6 +98,43 @@ def _claim_due_item(schedule_id: str) -> dict | None:
         return result
 
 
+def _still_eligible_to_send(item: dict) -> bool:
+    """Re-read approval, Page toggles and the approved content immediately before POST."""
+    with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("""
+          SELECT q.state,q.content_hash,d.*,p.enabled AS page_enabled,p.auto_publish,
+                 COALESCE(ss.enabled,0) AS schedule_enabled
+          FROM fb_publish_schedule q
+          JOIN fb_drafts d ON d.id=q.draft_id
+          JOIN fb_pages p ON p.id=q.page_id
+          LEFT JOIN fb_page_schedule_settings ss ON ss.page_id=q.page_id
+          WHERE q.id=? AND q.publish_attempt_id=?
+        """, (item["id"], item["publish_attempt_id"])).fetchone()
+        reason = None
+        if row is None or row["state"] != "publishing":
+            reason = "Lịch đăng không còn ở trạng thái gửi."
+        elif row["review_status"] != "approved":
+            reason = "Bản nháp đã bị thu hồi duyệt."
+        elif not row["page_enabled"] or not row["auto_publish"] or not row["schedule_enabled"]:
+            reason = "Page hoặc lịch tự động đã bị tắt."
+        elif row["page_id"] != item["page_id"] or draft_content_hash(row) != row["content_hash"]:
+            reason = "Nội dung hoặc Page đã thay đổi trước khi gửi."
+        else:
+            duplicate = find_duplicate(conn, item["page_id"], row["title"], row["body"],
+                                       row["source_url"], exclude_draft_id=item["draft_id"])
+            if duplicate:
+                reason = "Phát hiện nội dung trùng trước khi gửi."
+        if reason:
+            conn.execute("""
+              UPDATE fb_publish_schedule SET state='blocked',publish_error=?,updated_at=?
+              WHERE id=? AND state='publishing' AND publish_attempt_id=?
+            """, (reason, now(), item["id"], item["publish_attempt_id"]))
+            log(conn, "meta.publish_final_check_blocked", f"{item['id']}: {reason}", "warning")
+            return False
+        return True
+
+
 def _preflight_and_publish(item: dict) -> dict:
     """Freshly checks token and Page task before the one permitted Graph API POST."""
     schedule_id = item["id"]
@@ -119,6 +159,9 @@ def _preflight_and_publish(item: dict) -> dict:
                 raise RuntimeError("Meta trả về Page ID không khớp.")
             if "CREATE_CONTENT" not in set(page_data.get("tasks") or []):
                 raise RuntimeError("Token hiện không có tác vụ CREATE_CONTENT trên Page.")
+            if not _still_eligible_to_send(item):
+                return {"schedule_id": schedule_id, "state": "blocked",
+                        "message": "Điều kiện an toàn đã thay đổi trước khi gửi."}
             message = item["title"].strip() + "\n\n" + item["body"].strip()
             if item.get("source_url"):
                 message += "\n\nNguồn tham khảo: " + item["source_url"].strip()
