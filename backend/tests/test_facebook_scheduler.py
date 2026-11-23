@@ -101,3 +101,36 @@ def test_invalid_timezone_and_duplicate_times_are_rejected():
         scheduler.ScheduleSettings(timezone="Mars/Olympus")
     with pytest.raises(ValueError):
         scheduler.ScheduleSettings(posting_times=["09:00", "09:00"])
+
+
+
+def test_revoking_approval_cancels_queued_schedule(tmp_path):
+    path = tmp_path / "scheduler.sqlite3"
+    seed_page(path)
+    draft_id = add_draft("p1", "approved", "Bài cần thu hồi duyệt")
+    configure()
+    result = scheduler.build_schedule("p1", scheduler.PlanRequest(days=7))
+    assert result["count"] == 1
+    hub.review_draft(draft_id, hub.DraftReview(review_status="held", review_reason="Cần xác minh lại"))
+    with hub.connect() as conn:
+        row = conn.execute("SELECT state FROM fb_publish_schedule WHERE draft_id=?",
+                           (draft_id,)).fetchone()
+    assert row["state"] == "cancelled"
+
+
+def test_page_pause_and_resume_suspends_only_approved_queue_items(tmp_path):
+    path = tmp_path / "scheduler.sqlite3"
+    seed_page(path)
+    draft_id = add_draft("p1", "approved", "Bài tạm dừng theo Page")
+    configure()
+    scheduler.build_schedule("p1", scheduler.PlanRequest(days=7))
+    configure(enabled=False)
+    with hub.connect() as conn:
+        row = conn.execute("SELECT state FROM fb_publish_schedule WHERE draft_id=?",
+                           (draft_id,)).fetchone()
+    assert row["state"] == "paused"
+    configure(enabled=True)
+    with hub.connect() as conn:
+        row = conn.execute("SELECT state FROM fb_publish_schedule WHERE draft_id=?",
+                           (draft_id,)).fetchone()
+    assert row["state"] == "queued"
