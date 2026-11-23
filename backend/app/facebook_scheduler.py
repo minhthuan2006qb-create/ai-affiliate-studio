@@ -301,7 +301,7 @@ def validate_schedule_item(schedule_id: str):
 
 
 def process_due_schedules(limit: int = 50) -> dict:
-    """Validate due queue entries and mark eligible items ready; never publish."""
+    """Revalidate due entries and atomically promote unchanged drafts to ready; never publish."""
     init_scheduler_db()
     stamp = datetime.now(timezone.utc)
     with connect() as conn:
@@ -312,27 +312,69 @@ def process_due_schedules(limit: int = 50) -> dict:
         """, (stamp.isoformat(), max(1, min(int(limit), 200)))).fetchall()
     checked = ready = blocked = 0
     for item in rows:
-        result = validate_schedule_item(item['id'])
+        result = validate_schedule_item(item["id"])
         checked += 1
-        if result['eligible']:
-            with connect() as conn:
-                cur = conn.execute("""
-                  UPDATE fb_publish_schedule SET state='ready', updated_at=?
+        if not result["eligible"]:
+            blocked += int(result.get("state") == "blocked")
+            continue
+
+        # Re-read the draft and its settings under a write lock. This closes the
+        # gap between the first validation and the queued -> ready transition.
+        with connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("""
+              SELECT q.*, d.title, d.body, d.source_url, d.review_status,
+                     d.page_id AS draft_page_id, p.enabled AS page_enabled,
+                     COALESCE(ss.enabled, 0) AS schedule_enabled
+              FROM fb_publish_schedule q
+              JOIN fb_drafts d ON d.id=q.draft_id
+              JOIN fb_pages p ON p.id=q.page_id
+              LEFT JOIN fb_page_schedule_settings ss ON ss.page_id=q.page_id
+              WHERE q.id=? AND q.state='queued'
+            """, (item["id"],)).fetchone()
+            reason = None
+            if row is None:
+                continue
+            if datetime.fromisoformat(row["planned_at"]) > datetime.now(timezone.utc):
+                reason = "Chưa đến giờ dự kiến."
+            elif not row["page_enabled"]:
+                reason = "Page đang bị tắt."
+            elif not row["schedule_enabled"]:
+                reason = "Lịch tự động của Page đang tạm dừng."
+            elif row["review_status"] != "approved":
+                reason = "Bản nháp không còn được duyệt."
+            elif row["draft_page_id"] != row["page_id"]:
+                reason = "Bản nháp không thuộc Page trong lịch."
+            elif not row["content_hash"] or draft_content_hash(row) != row["content_hash"]:
+                reason = "Nội dung đã thay đổi sau khi xếp lịch; cần kiểm tra và xếp lịch lại."
+            else:
+                duplicate = find_duplicate(conn, row["page_id"], row["title"], row["body"],
+                                           row["source_url"], exclude_draft_id=row["draft_id"])
+                if duplicate:
+                    reason = f"Nội dung có khả năng trùng bài đã duyệt: {duplicate['title']}."
+            if reason:
+                conn.execute("""
+                  UPDATE fb_publish_schedule SET state='blocked', updated_at=?
                   WHERE id=? AND state='queued'
-                    AND EXISTS (
-                      SELECT 1 FROM fb_drafts d
-                      JOIN fb_pages p ON p.id=fb_publish_schedule.page_id
-                      JOIN fb_page_schedule_settings ss ON ss.page_id=fb_publish_schedule.page_id
-                      WHERE d.id=fb_publish_schedule.draft_id
-                        AND d.review_status='approved'
-                        AND p.enabled=1 AND ss.enabled=1
-                    )
                 """, (now(), item["id"]))
-                if cur.rowcount:
-                    ready += 1
-                    log(conn, "schedule.ready_for_publisher", item["id"])
-        else:
-            blocked += int(result.get('state') == 'blocked')
+                log(conn, "schedule.validation_blocked", f"{item['id']}: {reason}", "warning")
+                blocked += 1
+                continue
+            cur = conn.execute("""
+              UPDATE fb_publish_schedule SET state='ready', updated_at=?
+              WHERE id=? AND state='queued' AND content_hash=?
+                AND EXISTS (
+                  SELECT 1 FROM fb_drafts d
+                  JOIN fb_pages p ON p.id=fb_publish_schedule.page_id
+                  JOIN fb_page_schedule_settings ss ON ss.page_id=fb_publish_schedule.page_id
+                  WHERE d.id=fb_publish_schedule.draft_id
+                    AND d.review_status='approved' AND p.enabled=1 AND ss.enabled=1
+                    AND d.page_id=fb_publish_schedule.page_id
+                )
+            """, (now(), item["id"], row["content_hash"]))
+            if cur.rowcount:
+                ready += 1
+                log(conn, "schedule.ready_for_publisher", item["id"])
     return {"checked": checked, "ready": ready, "blocked": blocked,
             "note": "Chỉ kiểm tra và đánh dấu sẵn sàng; không đăng lên Facebook."}
 
