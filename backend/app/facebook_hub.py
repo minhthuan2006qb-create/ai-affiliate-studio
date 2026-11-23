@@ -11,7 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from .duplicate_guard import find_duplicate, remember_approved
+from .duplicate_guard import ensure_history_schema, find_duplicate, remember_approved
 
 router = APIRouter(prefix="/api/facebook-hub", tags=["Facebook Hub"])
 DB_PATH = Path(os.getenv("FACEBOOK_HUB_DB", os.getenv("DATABASE_PATH", str(Path(__file__).resolve().parents[1] / "data" / "jobs.sqlite3"))))
@@ -384,6 +384,7 @@ def review_draft(draft_id: str, payload: DraftReview):
             # A previously revoked draft may be approved again; keep cancelled
             # schedule rows cancelled so a deliberate new plan is required.
         else:
+            ensure_history_schema(conn)
             conn.execute("DELETE FROM fb_page_content_history WHERE draft_id=?", (draft_id,))
             # Never leave a revoked draft in the publish queue.
             tables = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fb_publish_schedule'").fetchone()
