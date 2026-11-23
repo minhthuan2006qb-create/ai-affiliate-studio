@@ -391,7 +391,7 @@ def review_draft(draft_id: str, payload: DraftReview):
             if tables:
                 conn.execute("""
                   UPDATE fb_publish_schedule SET state='cancelled', updated_at=?
-                  WHERE draft_id=? AND state IN ('queued','paused')
+                  WHERE draft_id=? AND state IN ('queued','paused','ready')
                 """, (now(), draft_id))
         log(conn, "draft.reviewed", f"{draft_id}:{payload.review_status}")
     return {"ok": True, "review_status": payload.review_status}
