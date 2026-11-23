@@ -51,6 +51,10 @@ def ensure_schema(path: Path | None = None) -> None:
         CREATE TABLE IF NOT EXISTS fb_sources (
           id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT,
           source_type TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+          trust_level TEXT NOT NULL DEFAULT 'unverified',
+          publisher_group TEXT NOT NULL DEFAULT '',
+          is_official INTEGER NOT NULL DEFAULT 0,
+          trust_notes TEXT NOT NULL DEFAULT '',
           last_checked_at TEXT, created_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS fb_page_sources (
