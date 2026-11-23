@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import time
+import time as time_module
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Literal
@@ -351,7 +351,7 @@ def main() -> None:
         print(json.dumps(result, ensure_ascii=False))
         if args.once:
             break
-        time.sleep(interval)
+        time_module.sleep(interval)
 
 
 if __name__ == "__main__":
