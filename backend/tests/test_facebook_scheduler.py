@@ -175,3 +175,42 @@ def test_changed_content_is_blocked_before_publish(tmp_path):
         state = conn.execute("SELECT state FROM fb_publish_schedule WHERE id=?",
                              (schedule_id,)).fetchone()["state"]
     assert state == "blocked"
+
+
+
+def test_due_worker_marks_only_validated_schedule_ready(tmp_path):
+    path = tmp_path / "scheduler.sqlite3"
+    seed_page(path)
+    add_draft("p1", "approved", "Bài đến hạn hợp lệ")
+    configure()
+    planned = scheduler.build_schedule("p1", scheduler.PlanRequest(days=7))
+    schedule_id = planned["created"][0]["id"]
+    _make_due(schedule_id)
+    result = scheduler.process_due_schedules()
+    assert result["checked"] == 1
+    assert result["ready"] == 1
+    assert result["blocked"] == 0
+    with hub.connect() as conn:
+        state = conn.execute("SELECT state FROM fb_publish_schedule WHERE id=?",
+                             (schedule_id,)).fetchone()["state"]
+    assert state == "ready"
+
+
+def test_due_worker_blocks_schedule_when_page_is_disabled(tmp_path):
+    path = tmp_path / "scheduler.sqlite3"
+    seed_page(path)
+    add_draft("p1", "approved", "Bài của Page bị tắt")
+    configure()
+    planned = scheduler.build_schedule("p1", scheduler.PlanRequest(days=7))
+    schedule_id = planned["created"][0]["id"]
+    _make_due(schedule_id)
+    with hub.connect() as conn:
+        conn.execute("UPDATE fb_pages SET enabled=0 WHERE id='p1'")
+    result = scheduler.process_due_schedules()
+    assert result["checked"] == 1
+    assert result["ready"] == 0
+    assert result["blocked"] == 1
+    with hub.connect() as conn:
+        state = conn.execute("SELECT state FROM fb_publish_schedule WHERE id=?",
+                             (schedule_id,)).fetchone()["state"]
+    assert state == "blocked"
