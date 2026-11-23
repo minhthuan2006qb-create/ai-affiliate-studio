@@ -47,6 +47,10 @@ def init_hub_db() -> None:
         CREATE TABLE IF NOT EXISTS fb_sources (
           id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT,
           source_type TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+          trust_level TEXT NOT NULL DEFAULT 'unverified',
+          publisher_group TEXT NOT NULL DEFAULT '',
+          is_official INTEGER NOT NULL DEFAULT 0,
+          trust_notes TEXT NOT NULL DEFAULT '',
           last_checked_at TEXT, created_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS fb_page_sources (
@@ -77,6 +81,15 @@ def init_hub_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_fb_drafts_status ON fb_drafts(review_status, created_at);
         """)
         # Additive migration for existing installations.
+        source_columns = {row["name"] for row in conn.execute("PRAGMA table_info(fb_sources)")}
+        for column, declaration in {
+            "trust_level": "TEXT NOT NULL DEFAULT 'unverified'",
+            "publisher_group": "TEXT NOT NULL DEFAULT ''",
+            "is_official": "INTEGER NOT NULL DEFAULT 0",
+            "trust_notes": "TEXT NOT NULL DEFAULT ''",
+        }.items():
+            if column not in source_columns:
+                conn.execute(f"ALTER TABLE fb_sources ADD COLUMN {column} {declaration}")
         page_columns = {row["name"] for row in conn.execute("PRAGMA table_info(fb_pages)")}
         for column, declaration in {
             "editorial_tone": "TEXT NOT NULL DEFAULT 'Trung lập, rõ ràng, dễ hiểu'",
@@ -118,6 +131,13 @@ class SourceCreate(BaseModel):
     name: str = Field(min_length=2, max_length=160)
     url: str | None = Field(default=None, max_length=2048)
     source_type: Literal["rss", "website", "authorized_api", "manual"]
+
+
+class SourceTrustUpdate(BaseModel):
+    trust_level: Literal["official", "established", "community", "unverified"] = "unverified"
+    publisher_group: str = Field(default="", max_length=180)
+    is_official: bool = False
+    trust_notes: str = Field(default="", max_length=700)
 
 
 class DraftCreate(BaseModel):
@@ -249,6 +269,22 @@ def create_source(payload: SourceCreate):
         log(conn, "source.created", payload.name.strip())
     return {"id": source_id, "name": payload.name.strip(), "url": payload.url,
             "source_type": payload.source_type, "enabled": True}
+
+
+@router.patch("/sources/{source_id}/trust", dependencies=[Depends(require_hub_key)])
+def update_source_trust(source_id: str, payload: SourceTrustUpdate):
+    values = payload.model_dump()
+    with connect() as conn:
+        if not conn.execute("SELECT 1 FROM fb_sources WHERE id=?", (source_id,)).fetchone():
+            raise HTTPException(404, "Không tìm thấy nguồn.")
+        conn.execute("""
+          UPDATE fb_sources SET trust_level=?, publisher_group=?, is_official=?, trust_notes=?
+          WHERE id=?
+        """, (values["trust_level"], values["publisher_group"].strip().lower(),
+              int(values["is_official"]), values["trust_notes"].strip(), source_id))
+        log(conn, "source.trust_updated",
+            f"{source_id}: level={values['trust_level']}; group={values['publisher_group']}; official={values['is_official']}")
+    return {"ok": True, "source_id": source_id}
 
 
 @router.delete("/sources/{source_id}", dependencies=[Depends(require_hub_key)])
