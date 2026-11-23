@@ -232,3 +232,32 @@ def test_revoking_approval_cancels_ready_item_too(tmp_path):
         state = conn.execute("SELECT state FROM fb_publish_schedule WHERE id=?",
                              (schedule_id,)).fetchone()["state"]
     assert state == "cancelled"
+
+
+def test_due_worker_rechecks_content_after_initial_validation(tmp_path, monkeypatch):
+    path = tmp_path / "scheduler.sqlite3"
+    seed_page(path)
+    draft_id = add_draft("p1", "approved", "Bài bị sửa giữa hai bước kiểm tra")
+    configure()
+    planned = scheduler.build_schedule("p1", scheduler.PlanRequest(days=7))
+    schedule_id = planned["created"][0]["id"]
+    _make_due(schedule_id)
+    original_validate = scheduler.validate_schedule_item
+
+    def validate_then_mutate(item_id):
+        result = original_validate(item_id)
+        with hub.connect() as conn:
+            conn.execute("UPDATE fb_drafts SET body=? WHERE id=?",
+                         ("Nội dung bị thay đổi ngay sau bước kiểm tra đầu tiên.", draft_id))
+        return result
+
+    monkeypatch.setattr(scheduler, "validate_schedule_item", validate_then_mutate)
+    result = scheduler.process_due_schedules()
+    assert result["checked"] == 1
+    assert result["ready"] == 0
+    assert result["blocked"] == 1
+    with hub.connect() as conn:
+        state = conn.execute("SELECT state FROM fb_publish_schedule WHERE id=?",
+                             (schedule_id,)).fetchone()["state"]
+    assert state == "blocked"
+
