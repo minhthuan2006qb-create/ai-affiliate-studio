@@ -172,12 +172,13 @@ def process_ready_items(limit: int = 10) -> dict:
     with connect() as conn:
         # A process crash after claiming an item leaves an ambiguous result.
         # Convert it to unknown instead of risking a duplicate post on restart.
+        stale_cutoff = (datetime.now(timezone.utc) - __import__('datetime').timedelta(minutes=2)).isoformat()
         stale = conn.execute("""
           UPDATE fb_publish_schedule SET state='unknown',
             publish_error='Worker dừng khi đang gửi; cần đối soát thủ công.',
             updated_at=?
-          WHERE state='publishing'
-        """, (now(),)).rowcount
+          WHERE state='publishing' AND (publish_attempted_at IS NULL OR publish_attempted_at < ?)
+        """, (now(), stale_cutoff)).rowcount
         rows = conn.execute("""
           SELECT id FROM fb_publish_schedule WHERE state='ready'
           ORDER BY planned_at LIMIT ?
