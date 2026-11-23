@@ -110,3 +110,85 @@ def test_source_trust_profile_can_be_updated(tmp_path, monkeypatch):
         assert saved["trust_level"] == "official"
         assert saved["publisher_group"] == "co-quan-a"
         assert saved["is_official"] == 1 or saved["is_official"] is True
+
+def test_meta_oauth_start_requires_server_configuration(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    main = load_hub_app(tmp_path, monkeypatch)
+    for key in ("META_APP_ID", "META_APP_SECRET", "META_REDIRECT_URI", "META_TOKEN_ENCRYPTION_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    with TestClient(main.app) as client:
+        response = client.get("/api/facebook-hub/meta/connect")
+    assert response.status_code == 503
+
+
+def test_meta_oauth_callback_encrypts_page_token_and_disconnects(tmp_path, monkeypatch):
+    from urllib.parse import urlparse, parse_qs
+    from cryptography.fernet import Fernet
+    from fastapi.testclient import TestClient
+    main = load_hub_app(tmp_path, monkeypatch)
+    key = Fernet.generate_key().decode("ascii")
+    monkeypatch.setenv("META_APP_ID", "test-app")
+    monkeypatch.setenv("META_APP_SECRET", "test-secret")
+    monkeypatch.setenv("META_REDIRECT_URI", "https://example.test/api/facebook-hub/meta/callback")
+    monkeypatch.setenv("META_TOKEN_ENCRYPTION_KEY", key)
+    import app.facebook_meta as meta
+    monkeypatch.setattr(meta, "_exchange_code", lambda *args: "user-token-secret")
+    monkeypatch.setattr(meta, "_fetch_pages", lambda token: [{
+        "id": "123456", "name": "Page OAuth Test",
+        "access_token": "page-token-secret", "tasks": ["CREATE_CONTENT"],
+    }])
+    headers = {"Authorization": "Bearer hub-test-key"}
+    with TestClient(main.app) as client:
+        start = client.get("/api/facebook-hub/meta/connect", follow_redirects=False)
+        assert start.status_code == 302
+        query = parse_qs(urlparse(start.headers["location"]).query)
+        state = query["state"][0]
+        assert "pages_manage_posts" in query["scope"][0]
+        callback = client.get("/api/facebook-hub/meta/callback",
+                              params={"code": "temporary-code", "state": state})
+        assert callback.status_code == 200
+        payload = callback.json()
+        assert len(payload["connected_pages"]) == 1
+        assert "page-token-secret" not in callback.text
+        page_id = payload["connected_pages"][0]["id"]
+        with meta.connect() as conn:
+            saved = conn.execute("SELECT token_ciphertext FROM fb_meta_page_tokens WHERE page_id=?",
+                                 (page_id,)).fetchone()
+            assert saved is not None
+            assert saved["token_ciphertext"] != "page-token-secret"
+        assert meta.decrypt_token(saved["token_ciphertext"]) == "page-token-secret"
+        status = client.get("/api/facebook-hub/meta/status", headers=headers)
+        assert status.status_code == 200
+        assert status.json()["pages"][0]["connection_status"] == "connected"
+        disconnected = client.delete(f"/api/facebook-hub/meta/pages/{page_id}", headers=headers)
+        assert disconnected.status_code == 200
+        with meta.connect() as conn:
+            assert conn.execute("SELECT 1 FROM fb_meta_page_tokens WHERE page_id=?",
+                                (page_id,)).fetchone() is None
+
+
+def test_meta_oauth_state_is_single_use(tmp_path, monkeypatch):
+    from urllib.parse import urlparse, parse_qs
+    from cryptography.fernet import Fernet
+    from fastapi.testclient import TestClient
+    main = load_hub_app(tmp_path, monkeypatch)
+    monkeypatch.setenv("META_APP_ID", "test-app")
+    monkeypatch.setenv("META_APP_SECRET", "test-secret")
+    monkeypatch.setenv("META_REDIRECT_URI", "https://example.test/api/facebook-hub/meta/callback")
+    monkeypatch.setenv("META_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    import app.facebook_meta as meta
+    monkeypatch.setattr(meta, "_exchange_code", lambda *args: "user-token")
+    monkeypatch.setattr(meta, "_fetch_pages", lambda token: [{
+        "id": "789", "name": "Page State Test", "access_token": "page-token",
+        "tasks": ["CREATE_CONTENT"],
+    }])
+    with TestClient(main.app) as client:
+        start = client.get("/api/facebook-hub/meta/connect", follow_redirects=False)
+        state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+        first = client.get("/api/facebook-hub/meta/callback",
+                           params={"code": "code", "state": state})
+        second = client.get("/api/facebook-hub/meta/callback",
+                            params={"code": "code", "state": state})
+    assert first.status_code == 200
+    assert second.status_code == 400
+
