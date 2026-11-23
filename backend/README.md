@@ -75,7 +75,7 @@ Current endpoints (all require `Authorization: Bearer <key>`):
 - `POST /api/facebook-hub/drafts`, `GET /api/facebook-hub/drafts`
 - `PATCH /api/facebook-hub/drafts/{id}/review`
 
-Drafts with confidence below 70 are automatically placed in `held`; scores 70 and above enter `pending` for review. This score is only an intake rule, not an AI fact-check. No source polling, AI verification, Meta OAuth, Facebook publishing, or affiliate click tracking is active yet. Auto-publishing is intentionally blocked until a Page has a verified Meta connection.
+Drafts with confidence below 70 are automatically placed in `held`. A candidate can enter `pending` only when metadata coverage is at least 70, at least two distinct publisher groups have been explicitly classified as `established` or `official`, and no numeric conflict heuristic fires. Otherwise it remains `held`. These are conservative intake rules, not an AI fact-check or proof of truth. No source polling, AI verification, Meta OAuth, Facebook publishing, or affiliate click tracking is active yet. Auto-publishing is intentionally blocked until a Page has a verified Meta connection.
 
 
 ## RSS source polling worker
@@ -132,3 +132,10 @@ The profile is managed through authenticated endpoints:
 - `PUT /api/facebook-hub/pages/{page_id}/editorial-profile`
 
 Existing databases are upgraded additively when the Hub initializes; existing Page records receive neutral defaults. Editorial preferences guide style and topic selection only and do not count as evidence that a claim is true.
+
+
+## Source trust registry and conflict warnings
+
+Each source has a configurable trust profile in the Hub UI: `unverified`, `community`, `established`, or `official`; a publisher-group identifier; an explicit official-source flag; and a note explaining the basis for the classification. Use the same publisher-group value for outlets under the same owner, network, or syndication group. If no group is entered, the source hostname is used as a fallback and must not be interpreted as proof of editorial independence.
+
+A candidate enters the pending review queue only if it has metadata coverage of at least 70, at least two distinct publisher groups explicitly classified as `established` or `official`, and no detected numeric conflict. Unclassified sources do not count as trusted independent groups. Conflicting numeric claims with the same unit (for example, different attendee counts) force the candidate to `held`. These checks are deliberately conservative heuristics: they do not establish source ownership, semantic agreement, or factual truth. A human must still verify the original sources before approval. This pipeline never auto-publishes.
