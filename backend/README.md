@@ -259,6 +259,14 @@ The Hub includes an authenticated, on-demand token health check:
 - Health states are `healthy`, `expiring` (within 7 days), `missing_permissions`, `invalid`, or `check_failed`.
 - The monitor records token expiry and data-access expiry timestamps when Meta returns them. A zero/absent expiry is shown as unknown/no finite expiry, not interpreted as a promise of permanent validity.
 - If Meta reports an invalid token or missing required permissions, the Page is marked `needs_reconnect` and internal auto-publish is forced off. A transient inspection failure is reported as `check_failed` and does not by itself disconnect the Page.
-- The Facebook Hub UI has a **Kiểm tra sức khỏe token** button. Checks are on-demand; no background monitor is running yet.
+- The Facebook Hub UI has a **Kiểm tra sức khỏe token** button for an immediate manual check.
+- A separate background worker can run every 12 hours by default:
 
-The check uses the server-side Meta App ID/secret to call `debug_token`. Credentials and Page tokens are never returned to the browser. A successful check only confirms Meta's response at that moment; the future publisher must still revalidate immediately before every write. This monitor does not refresh tokens, renew permissions, or publish posts.
+  ```bash
+  cd backend
+  python -m app.facebook_token_health
+  ```
+
+  Run a one-time check with `python -m app.facebook_token_health --once`. Change the interval with `--interval-hours 24` (minimum 1 hour). Run it as a separate process/container using the same persistent `FACEBOOK_HUB_DB` (or `DATABASE_PATH`) and Meta environment variables as the API.
+
+The check uses the server-side Meta App ID/secret to call `debug_token`. Credentials and Page tokens are never returned to the browser. A successful check only confirms Meta's response at that moment; the future publisher must still revalidate immediately before every write. This worker does not refresh tokens, renew permissions, or publish posts.
