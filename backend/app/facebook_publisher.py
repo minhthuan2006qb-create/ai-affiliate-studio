@@ -5,7 +5,7 @@ import json
 import os
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Depends
@@ -172,7 +172,7 @@ def process_ready_items(limit: int = 10) -> dict:
     with connect() as conn:
         # A process crash after claiming an item leaves an ambiguous result.
         # Convert it to unknown instead of risking a duplicate post on restart.
-        stale_cutoff = (datetime.now(timezone.utc) - __import__('datetime').timedelta(minutes=2)).isoformat()
+        stale_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
         stale = conn.execute("""
           UPDATE fb_publish_schedule SET state='unknown',
             publish_error='Worker dừng khi đang gửi; cần đối soát thủ công.',
