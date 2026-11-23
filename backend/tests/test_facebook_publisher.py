@@ -94,3 +94,25 @@ def test_final_gate_blocks_if_approval_is_revoked_after_claim(tmp_path, monkeypa
         state = conn.execute("SELECT state FROM fb_publish_schedule WHERE id=?",
                              (schedule_id,)).fetchone()["state"]
     assert state == "blocked"
+
+
+def test_publish_status_returns_outcomes_without_credentials(tmp_path, monkeypatch):
+    schedule_id = _seed(tmp_path / "publisher.sqlite3", auto_publish=True)
+    monkeypatch.setattr(publisher, "PUBLISH_ENABLED", False)
+    with hub.connect() as conn:
+        conn.execute("""
+          UPDATE fb_publish_schedule
+          SET state='published',published_post_id='meta-post-123',publish_error=NULL
+          WHERE id=?
+        """, (schedule_id,))
+        conn.execute("""
+          INSERT INTO fb_meta_page_tokens
+          (page_id,meta_page_id,token_ciphertext,granted_scopes,connected_at,updated_at)
+          VALUES('p1','meta-p1','never-return-this-token','pages_manage_posts',?,?)
+        """, (hub.now(), hub.now()))
+    result = publisher.publish_status(limit=20)
+    assert result["publishing_enabled"] is False
+    assert len(result["items"]) == 1
+    assert result["items"][0]["state"] == "published"
+    assert result["items"][0]["published_post_id"] == "meta-post-123"
+    assert "never-return-this-token" not in str(result)
