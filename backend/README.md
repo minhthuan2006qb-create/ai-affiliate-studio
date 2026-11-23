@@ -248,3 +248,17 @@ The OAuth callback does not expose tokens in its response. Page tokens are encry
 - A connected Page only means the OAuth flow returned a Page token and the required scopes/task were observed at connection time. Permissions can later be revoked or tokens invalidated.
 - The publishing feature must re-check token validity, Page task, draft approval, content hash, schedule state, and duplicate history immediately before every Meta API write.
 - Keep the existing internal scheduler in non-publishing mode until that final publisher and its tests are implemented.
+
+
+### Meta Page token health monitor
+
+The Hub includes an authenticated, on-demand token health check:
+
+- `GET /api/facebook-hub/meta/health` shows the last saved health result for each connected Page.
+- `POST /api/facebook-hub/meta/health/check` calls Meta's `debug_token` endpoint for each stored Page token and records the result.
+- Health states are `healthy`, `expiring` (within 7 days), `missing_permissions`, `invalid`, or `check_failed`.
+- The monitor records token expiry and data-access expiry timestamps when Meta returns them. A zero/absent expiry is shown as unknown/no finite expiry, not interpreted as a promise of permanent validity.
+- If Meta reports an invalid token or missing required permissions, the Page is marked `needs_reconnect` and internal auto-publish is forced off. A transient inspection failure is reported as `check_failed` and does not by itself disconnect the Page.
+- The Facebook Hub UI has a **Kiểm tra sức khỏe token** button. Checks are on-demand; no background monitor is running yet.
+
+The check uses the server-side Meta App ID/secret to call `debug_token`. Credentials and Page tokens are never returned to the browser. A successful check only confirms Meta's response at that moment; the future publisher must still revalidate immediately before every write. This monitor does not refresh tokens, renew permissions, or publish posts.
