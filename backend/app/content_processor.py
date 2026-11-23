@@ -214,6 +214,9 @@ def process_item(item_id: str) -> dict[str, object]:
                     )
             else:
                 draft_id = create_candidate_draft(conn, item, page["id"], score, hosts, rationale)
+                candidate_status = "pending" if score >= 70 and trusted_groups >= 2 and not conflicts else "held"
+                conn.execute("UPDATE fb_drafts SET review_status=?, review_reason=?, updated_at=? WHERE id=?",
+                             (candidate_status, rationale, now(), draft_id))
             record_id = hashlib.sha256(f"process:{item_id}:{page['id']}".encode()).hexdigest()
             conn.execute("""
               INSERT OR IGNORE INTO fb_item_processing
