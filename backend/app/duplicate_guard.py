@@ -30,6 +30,14 @@ def similarity(a: str, b: str) -> float:
     left, right = tokens(a), tokens(b)
     return len(left & right) / len(left | right) if left and right else 0.0
 
+def is_material_update(candidate: str, previous: str) -> bool:
+    """Allow a same-story revision only when it adds a meaningful amount of new information."""
+    new_tokens, old_tokens = tokens(candidate), tokens(previous)
+    if not new_tokens or not old_tokens:
+        return False
+    novel = new_tokens - old_tokens
+    return len(novel) >= 5 and len(novel) / max(len(new_tokens), 1) >= 0.25
+
 def ensure_history_schema(conn: sqlite3.Connection) -> None:
     conn.execute("""
       CREATE TABLE IF NOT EXISTS fb_page_content_history (
@@ -56,10 +64,12 @@ def find_duplicate(conn: sqlite3.Connection, page_id: str, title: str, body: str
     """, (page_id, exclude_draft_id)).fetchall()
     candidate = f"{title or ''} {body or ''}"
     for row in rows:
-        if canonical and row["canonical_url"] and canonical == row["canonical_url"]:
-            return {"draft_id": row["draft_id"], "title": row["title"], "reason": "Đường dẫn nguồn đã được dùng trong một bài đã duyệt trên Page này."}
-        score = similarity(candidate, f"{row['title']} {row['body']}")
-        if score >= 0.68:
+        previous = f"{row['title']} {row['body']}"
+        same_url = bool(canonical and row["canonical_url"] and canonical == row["canonical_url"])
+        if same_url and not is_material_update(candidate, previous):
+            return {"draft_id": row["draft_id"], "title": row["title"], "reason": "Đường dẫn nguồn đã được dùng; nội dung chưa có đủ thông tin mới để xem là bản cập nhật."}
+        score = similarity(candidate, previous)
+        if score >= 0.68 and not is_material_update(candidate, previous):
             return {"draft_id": row["draft_id"], "title": row["title"], "reason": f"Nội dung gần trùng bài đã duyệt (độ tương đồng {round(score * 100)}%)."}
     return None
 
