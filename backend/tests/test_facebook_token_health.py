@@ -100,3 +100,14 @@ def test_token_health_requires_hub_authentication(tmp_path, monkeypatch):
     with TestClient(main.app) as client:
         response = client.get("/api/facebook-hub/meta/health")
     assert response.status_code == 401
+
+
+def test_token_health_worker_once_with_no_connected_pages(tmp_path, monkeypatch):
+    import sys
+    main = load_hub_app(tmp_path, monkeypatch)
+    import app.facebook_token_health as health
+    monkeypatch.setattr(sys, "argv", ["facebook_token_health", "--once"])
+    with TestClient(main.app):
+        result = health.check_all_tokens()
+        assert result == {"checked": 0, "pages": []}
+        health.main()
