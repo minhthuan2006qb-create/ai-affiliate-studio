@@ -120,3 +120,15 @@ Run a one-off rewrite batch from the backend directory:
 ```bash
 python -m app.ai_writer --limit 5
 ```
+
+
+## Page-specific editorial profiles
+
+Each Facebook Page can store its own writing tone, target audience, preferred topics, topics/styles to avoid, and additional editorial guidance. Configure these in the Facebook Hub under **Quy tắc nội dung riêng cho từng Page**. The AI writer includes that profile in its rewrite prompt, while retaining the same no-invention and human-review safeguards.
+
+The profile is managed through authenticated endpoints:
+
+- `GET /api/facebook-hub/pages/{page_id}/editorial-profile`
+- `PUT /api/facebook-hub/pages/{page_id}/editorial-profile`
+
+Existing databases are upgraded additively when the Hub initializes; existing Page records receive neutral defaults. Editorial preferences guide style and topic selection only and do not count as evidence that a claim is true.
