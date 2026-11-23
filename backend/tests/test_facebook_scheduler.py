@@ -214,3 +214,21 @@ def test_due_worker_blocks_schedule_when_page_is_disabled(tmp_path):
         state = conn.execute("SELECT state FROM fb_publish_schedule WHERE id=?",
                              (schedule_id,)).fetchone()["state"]
     assert state == "blocked"
+
+
+
+def test_revoking_approval_cancels_ready_item_too(tmp_path):
+    path = tmp_path / "scheduler.sqlite3"
+    seed_page(path)
+    draft_id = add_draft("p1", "approved", "Bài đã qua kiểm tra an toàn")
+    configure()
+    planned = scheduler.build_schedule("p1", scheduler.PlanRequest(days=7))
+    schedule_id = planned["created"][0]["id"]
+    _make_due(schedule_id)
+    result = scheduler.process_due_schedules()
+    assert result["ready"] == 1
+    hub.review_draft(draft_id, hub.DraftReview(review_status="held", review_reason="Cần kiểm tra lại"))
+    with hub.connect() as conn:
+        state = conn.execute("SELECT state FROM fb_publish_schedule WHERE id=?",
+                             (schedule_id,)).fetchone()["state"]
+    assert state == "cancelled"
