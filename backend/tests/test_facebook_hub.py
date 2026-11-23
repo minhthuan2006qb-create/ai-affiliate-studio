@@ -129,7 +129,7 @@ def test_meta_oauth_callback_encrypts_page_token_and_disconnects(tmp_path, monke
     key = Fernet.generate_key().decode("ascii")
     monkeypatch.setenv("META_APP_ID", "test-app")
     monkeypatch.setenv("META_APP_SECRET", "test-secret")
-    monkeypatch.setenv("META_REDIRECT_URI", "https://example.test/api/facebook-hub/meta/callback")
+    monkeypatch.setenv("META_REDIRECT_URI", "http://localhost:8000/api/facebook-hub/meta/callback")
     monkeypatch.setenv("META_TOKEN_ENCRYPTION_KEY", key)
     import app.facebook_meta as meta
     monkeypatch.setattr(meta, "_exchange_code", lambda *args: "user-token-secret")
@@ -174,7 +174,7 @@ def test_meta_oauth_state_is_single_use(tmp_path, monkeypatch):
     main = load_hub_app(tmp_path, monkeypatch)
     monkeypatch.setenv("META_APP_ID", "test-app")
     monkeypatch.setenv("META_APP_SECRET", "test-secret")
-    monkeypatch.setenv("META_REDIRECT_URI", "https://example.test/api/facebook-hub/meta/callback")
+    monkeypatch.setenv("META_REDIRECT_URI", "http://localhost:8000/api/facebook-hub/meta/callback")
     monkeypatch.setenv("META_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
     import app.facebook_meta as meta
     monkeypatch.setattr(meta, "_exchange_code", lambda *args: "user-token")
@@ -191,4 +191,22 @@ def test_meta_oauth_state_is_single_use(tmp_path, monkeypatch):
                             params={"code": "code", "state": state})
     assert first.status_code == 200
     assert second.status_code == 400
+
+def test_meta_oauth_callback_rejects_state_from_another_browser(tmp_path, monkeypatch):
+    from urllib.parse import urlparse, parse_qs
+    from cryptography.fernet import Fernet
+    from fastapi.testclient import TestClient
+    main = load_hub_app(tmp_path, monkeypatch)
+    monkeypatch.setenv("META_APP_ID", "test-app")
+    monkeypatch.setenv("META_APP_SECRET", "test-secret")
+    monkeypatch.setenv("META_REDIRECT_URI", "http://localhost:8000/api/facebook-hub/meta/callback")
+    monkeypatch.setenv("META_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+    with TestClient(main.app) as client:
+        start = client.get("/api/facebook-hub/meta/connect", follow_redirects=False)
+        state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+        # A second client has no browser-bound state cookie.
+        other_browser = TestClient(main.app)
+        response = other_browser.get("/api/facebook-hub/meta/callback",
+                                     params={"code": "code", "state": state})
+    assert response.status_code == 400
 
