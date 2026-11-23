@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import time
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Literal
@@ -142,7 +144,7 @@ def write_settings(page_id: str, payload: ScheduleSettings):
         if not values["enabled"]:
             conn.execute("""
               UPDATE fb_publish_schedule SET state='paused', updated_at=?
-              WHERE page_id=? AND state='queued'
+              WHERE page_id=? AND state IN ('queued','ready')
             """, (now(), page_id))
         else:
             conn.execute("""
@@ -183,7 +185,7 @@ def build_schedule(page_id: str, payload: PlanRequest):
         """, (page_id,)).fetchall()
         existing = conn.execute("""
           SELECT planned_at FROM fb_publish_schedule
-          WHERE page_id=? AND state='queued' ORDER BY planned_at
+          WHERE page_id=? AND state IN ('queued','ready') ORDER BY planned_at
         """, (page_id,)).fetchall()
         occupied = [datetime.fromisoformat(row["planned_at"]).astimezone(zone) for row in existing]
         for draft in drafts:
@@ -258,10 +260,11 @@ def validate_schedule_item(schedule_id: str):
     with connect() as conn:
         row = conn.execute("""
           SELECT q.*, d.title, d.body, d.source_url, d.review_status, d.page_id AS draft_page_id,
-                 p.enabled AS page_enabled
+                 p.enabled AS page_enabled, COALESCE(ss.enabled, 0) AS schedule_enabled
           FROM fb_publish_schedule q
           JOIN fb_drafts d ON d.id=q.draft_id
           JOIN fb_pages p ON p.id=q.page_id
+          LEFT JOIN fb_page_schedule_settings ss ON ss.page_id=q.page_id
           WHERE q.id=?
         """, (schedule_id,)).fetchone()
         if row is None:
@@ -274,6 +277,8 @@ def validate_schedule_item(schedule_id: str):
         reason = None
         if not row["page_enabled"]:
             reason = "Page đang bị tắt."
+        elif not row["schedule_enabled"]:
+            reason = "Lịch tự động của Page đang tạm dừng."
         elif row["review_status"] != "approved":
             reason = "Bản nháp không còn được duyệt."
         elif row["draft_page_id"] != row["page_id"]:
@@ -293,3 +298,61 @@ def validate_schedule_item(schedule_id: str):
         log(conn, "schedule.validation_passed", schedule_id)
         return {"eligible": True, "state": "queued",
                 "reason": "Đạt kiểm tra trước đăng; chưa có bài nào được gửi lên Facebook."}
+
+
+def process_due_schedules(limit: int = 50) -> dict:
+    """Validate due queue entries and mark eligible items ready; never publish."""
+    init_scheduler_db()
+    stamp = datetime.now(timezone.utc)
+    with connect() as conn:
+        rows = conn.execute("""
+          SELECT id FROM fb_publish_schedule
+          WHERE state='queued' AND planned_at<=?
+          ORDER BY planned_at LIMIT ?
+        """, (stamp.isoformat(), max(1, min(int(limit), 200)))).fetchall()
+    checked = ready = blocked = 0
+    for item in rows:
+        result = validate_schedule_item(item['id'])
+        checked += 1
+        if result['eligible']:
+            with connect() as conn:
+                cur = conn.execute("""
+                  UPDATE fb_publish_schedule SET state='ready', updated_at=?
+                  WHERE id=? AND state='queued'
+                    AND EXISTS (
+                      SELECT 1 FROM fb_drafts d
+                      JOIN fb_pages p ON p.id=fb_publish_schedule.page_id
+                      JOIN fb_page_schedule_settings ss ON ss.page_id=fb_publish_schedule.page_id
+                      WHERE d.id=fb_publish_schedule.draft_id
+                        AND d.review_status='approved'
+                        AND p.enabled=1 AND ss.enabled=1
+                    )
+                """, (now(), item["id"]))
+                if cur.rowcount:
+                    ready += 1
+                    log(conn, "schedule.ready_for_publisher", item["id"])
+        else:
+            blocked += int(result.get('state') == 'blocked')
+    return {"checked": checked, "ready": ready, "blocked": blocked,
+            "note": "Chỉ kiểm tra và đánh dấu sẵn sàng; không đăng lên Facebook."}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Facebook Hub due-schedule safety worker")
+    parser.add_argument("--once", action="store_true", help="Process due schedule items once and exit")
+    parser.add_argument("--interval-seconds", type=int, default=60,
+                        help="Polling interval in seconds (minimum 10)")
+    parser.add_argument("--limit", type=int, default=50, help="Maximum due items per cycle (1-200)")
+    args = parser.parse_args()
+    interval = max(10, args.interval_seconds)
+    init_scheduler_db()
+    while True:
+        result = process_due_schedules(args.limit)
+        print(json.dumps(result, ensure_ascii=False))
+        if args.once:
+            break
+        time.sleep(interval)
+
+
+if __name__ == "__main__":
+    main()
