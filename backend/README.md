@@ -154,3 +154,11 @@ The candidate processor checks the feed item's publication timestamp when it is 
 - Revoking approval removes that draft from the history. The review endpoint also rejects approval if another approved item on that Page is already a match.
 - This is a heuristic duplicate guard, not semantic fact-checking. A genuinely updated story can still be flagged and should be reviewed manually; there is not yet an explicit “publish as update” override.
 - This records approval in the Hub only. It does not mean the post has been published to Facebook; Meta OAuth and actual publishing are still not implemented.
+
+
+#### Updated-story handling
+
+- A candidate matching an already-approved story is not automatically treated as a duplicate if its title/body adds at least five new meaningful tokens and those tokens represent at least 25% of the candidate's normalized vocabulary.
+- This rule is a conservative heuristic to let substantial updates (for example, a newly announced time, venue, lineup, or ticket detail) reach review.
+- Minor wording changes and repeated source URLs without meaningful new information remain held.
+- The rule does not verify whether new details are true. The existing source-trust and evidence checks still apply, and a human should review the update before any publication.
