@@ -85,6 +85,12 @@ def rewrite_draft(draft_id: str, client: httpx.Client | None = None) -> dict[str
           JOIN fb_sources s ON s.id=i.source_id
           WHERE x.draft_id=? ORDER BY s.name LIMIT 12
         """, (draft_id,)).fetchall()
+        page_profile = conn.execute("""
+          SELECT p.name, p.editorial_tone, p.editorial_audience,
+                 p.editorial_topics, p.editorial_avoid, p.editorial_guidance
+          FROM fb_drafts d JOIN fb_pages p ON p.id=d.page_id
+          WHERE d.id=?
+        """, (draft_id,)).fetchone()
     if not sources:
         return {"draft_id": draft_id, "status": "skipped", "reason": "Không tìm thấy dữ liệu RSS gốc để biên tập."}
     source_text = []
@@ -95,8 +101,18 @@ def rewrite_draft(draft_id: str, client: httpx.Client | None = None) -> dict[str
             "headline": plain_text(source["title"], 300),
             "excerpt": plain_text(source["summary"] or "", 1200),
         })
+    profile = dict(page_profile) if page_profile else {}
+    profile = {
+        "page_name": plain_text(profile.get("name", ""), 120),
+        "tone": plain_text(profile.get("editorial_tone", "Trung lập, rõ ràng, dễ hiểu"), 160),
+        "audience": plain_text(profile.get("editorial_audience", "Độc giả phổ thông tại Việt Nam"), 200),
+        "topics": plain_text(profile.get("editorial_topics", ""), 1200),
+        "avoid_topics": plain_text(profile.get("editorial_avoid", ""), 1200),
+        "additional_guidance": plain_text(profile.get("editorial_guidance", ""), 1600),
+    }
     prompt = {
-        "task": "Biên tập một bản tin tiếng Việt ngắn, rõ ràng, trung lập cho Facebook.",
+        "task": "Biên tập một bản tin tiếng Việt ngắn, rõ ràng cho Facebook, phù hợp hồ sơ biên tập của Page.",
+        "page_editorial_profile": profile,
         "rules": [
             "Chỉ dùng dữ kiện được nêu rõ trong các tiêu đề và trích yếu đầu vào.",
             "Không suy đoán nguyên nhân, con số, thời gian, địa điểm, nhân vật hoặc kết quả còn thiếu.",
