@@ -96,7 +96,7 @@ def detect_numeric_conflicts(item: sqlite3.Row, matched: list[sqlite3.Row]) -> l
     # Conservative metadata heuristic: flag differing values attached to the same unit.
     # This is a review warning, not semantic fact-checking.
     patterns = [
-        re.compile(r"(?<!\\w)(\\d+(?:[.,]\\d+)?)\\s*(%|triệu|tỷ|người|km|giờ|ngày|độ|đồng|lần|ca)\\b", re.I),
+        re.compile(r"(?<!\w)(\d+(?:[.,]\d+)?)\s*(%|triệu|tỷ|người|km|giờ|ngày|độ|đồng|lần|ca)\b", re.I),
     ]
     observations: dict[str, set[str]] = {}
     for row in [item, *matched]:
