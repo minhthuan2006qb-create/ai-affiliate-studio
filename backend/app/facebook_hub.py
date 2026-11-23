@@ -381,5 +381,7 @@ def review_draft(draft_id: str, payload: DraftReview):
         if payload.review_status == "approved":
             approved = conn.execute("SELECT * FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
             remember_approved(conn, approved, now())
+        else:
+            conn.execute("DELETE FROM fb_page_content_history WHERE draft_id=?", (draft_id,))
         log(conn, "draft.reviewed", f"{draft_id}:{payload.review_status}")
     return {"ok": True, "review_status": payload.review_status}
