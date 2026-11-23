@@ -118,7 +118,8 @@ def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[i
                            if bool(row["is_official"]) or row["trust_level"] == "official"}
     official = len(official_source_ids)
     trusted_groups = {publisher_group(row) for row in rows
-                      if publisher_group(row) and row["trust_level"] in {"official", "established"}}
+                      if publisher_group(row) and
+                      (row["trust_level"] in {"official", "established"} or bool(row["is_official"]))}
     score = {0: 0, 1: 35, 2: 55, 3: 70}.get(len(hosts), 75)
     if not (item["summary"] or "").strip():
         score = min(score, 55)
