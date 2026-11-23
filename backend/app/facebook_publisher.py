@@ -155,7 +155,17 @@ def _preflight_and_publish(item: dict) -> dict:
             log(conn, "meta.publish_unknown", f"schedule={schedule_id}; {type(exc).__name__}", "warning")
         return {"schedule_id": schedule_id, "state": "unknown", "message": message}
     except Exception as exc:
-        message = str(exc)[:450] or "Lỗi không xác định khi đăng."
+        # Never persist exception strings from HTTP clients: their request URLs
+        # can contain credentials (notably the Page token on the preflight GET).
+        if isinstance(exc, RuntimeError):
+            message = str(exc)[:300]
+        elif isinstance(exc, httpx.HTTPStatusError):
+            message = f"Meta trả về HTTP {exc.response.status_code}; cần kiểm tra cấu hình/quyền."
+        elif isinstance(exc, httpx.HTTPError):
+            message = "Lỗi kết nối Meta; cần kiểm tra trạng thái Page trước khi xử lý tiếp."
+        else:
+            detail = getattr(exc, "detail", None)
+            message = str(detail)[:300] if isinstance(detail, str) else f"Lỗi xử lý Meta ({type(exc).__name__})."
         with connect() as conn:
             conn.execute("""UPDATE fb_publish_schedule SET state='failed',publish_error=?,
               updated_at=? WHERE id=? AND state='publishing' AND publish_attempt_id=?""",
