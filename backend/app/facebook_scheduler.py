@@ -121,6 +121,28 @@ def write_settings(page_id: str, payload: ScheduleSettings):
         """, (page_id, int(values["enabled"]), values["timezone"],
               json.dumps(values["posting_times"]), values["max_posts_per_day"],
               values["min_interval_minutes"], now()))
+        # Pausing a Page suspends queued slots; resuming restores only
+        # slots whose drafts are still approved.
+        if not values["enabled"]:
+            conn.execute("""
+              UPDATE fb_publish_schedule SET state='paused', updated_at=?
+              WHERE page_id=? AND state='queued'
+            """, (now(), page_id))
+        else:
+            conn.execute("""
+              UPDATE fb_publish_schedule SET state='queued', updated_at=?
+              WHERE page_id=? AND state='paused'
+                AND EXISTS (SELECT 1 FROM fb_drafts d
+                            WHERE d.id=fb_publish_schedule.draft_id
+                              AND d.review_status='approved')
+            """, (now(), page_id))
+            conn.execute("""
+              UPDATE fb_publish_schedule SET state='cancelled', updated_at=?
+              WHERE page_id=? AND state='paused'
+                AND NOT EXISTS (SELECT 1 FROM fb_drafts d
+                                WHERE d.id=fb_publish_schedule.draft_id
+                                  AND d.review_status='approved')
+            """, (now(), page_id))
         log(conn, "schedule.settings_updated", page_id)
     return {"ok": True, "page_id": page_id}
 
