@@ -155,11 +155,19 @@ def rewrite_draft(draft_id: str, client: httpx.Client | None = None) -> dict[str
             current = conn.execute("SELECT review_status FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
             if current is None or current["review_status"] in {"approved", "rejected", "published"}:
                 return {"draft_id": draft_id, "status": "skipped", "reason": "Trạng thái bản nháp đã thay đổi trong lúc xử lý."}
+            # Rewriting is editorial work, not fact-checking. Never let an AI
+            # rewrite leave a candidate eligible for approval/auto-publication.
+            # A separate evidence-verification step must explicitly release it.
+            review_reason = (
+                "Đã viết lại bằng AI nhưng chưa kiểm chứng từng dữ kiện với nguồn gốc; "
+                "bắt buộc giữ lại để đối chiếu bằng chứng. " + notes
+            )
             conn.execute("""
               UPDATE fb_drafts SET title=?, body=?, writer_status='done',
-                writer_model=?, writer_notes=?, review_reason=?, updated_at=?
+                writer_model=?, writer_notes=?, review_status='held',
+                review_reason=?, updated_at=?
               WHERE id=?
-            """, (title, body, model, notes, "AI đã biên tập; chưa xác minh độc lập. " + notes, now(), draft_id))
+            """, (title, body, model, notes, review_reason, now(), draft_id))
             log(conn, "draft.ai_rewritten", f"{draft_id}: model={model}; human review required")
         return {"draft_id": draft_id, "status": "done", "model": model}
     except Exception as exc:
