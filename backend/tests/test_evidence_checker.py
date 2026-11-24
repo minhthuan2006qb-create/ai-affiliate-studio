@@ -127,6 +127,10 @@ def test_ai_added_date_and_metric_are_flagged_unsupported(tmp_path, monkeypatch)
     result = ec.check_draft(draft_id)
     assert result["status"] == "unsupported"
     assert result["counts"]["unsupported"] >= 2
+    dashboard = hub.get_draft_evidence(draft_id)
+    unsupported_claims = [item for item in dashboard["claims"] if item["status"] == "unsupported"]
+    assert len(unsupported_claims) >= 2
+    assert dashboard["publication_allowed"] is False
     with hub.connect() as conn:
         claims = conn.execute(
             "SELECT claim_type, normalized_value, status, source_count "
