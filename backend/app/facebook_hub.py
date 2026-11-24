@@ -417,9 +417,10 @@ def get_draft_evidence(draft_id: str):
           WHERE draft_id=?
           ORDER BY CASE status
             WHEN 'contradicted' THEN 0
-            WHEN 'insufficient' THEN 1
-            WHEN 'unverified' THEN 2
-            WHEN 'supported' THEN 3 ELSE 4 END, claim_type, normalized_value
+            WHEN 'unsupported' THEN 1
+            WHEN 'insufficient' THEN 2
+            WHEN 'unverified' THEN 3
+            WHEN 'supported' THEN 4 ELSE 5 END, claim_type, normalized_value
         """, (draft_id,)).fetchall()
         result = []
         for claim in claims:
