@@ -85,7 +85,7 @@ def _trusted_group(row: sqlite3.Row) -> str:
 def check_draft(draft_id: str) -> dict[str, object]:
     ensure_evidence_schema()
     with connect() as conn:
-        draft = conn.execute("SELECT id, review_status FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
+        draft = conn.execute("SELECT id, title, body, review_status FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
         if draft is None:
             return {"draft_id": draft_id, "status": "missing", "claims": 0}
         rows = conn.execute("""
@@ -201,9 +201,10 @@ def check_draft(draft_id: str) -> dict[str, object]:
         # The checker records evidence but never approves a draft. RSS excerpts
         # cannot prove that every claim in an AI-rewritten body is accurate.
         status_counts = {status: sum(1 for item in summaries if item["status"] == status)
-                         for status in ("supported", "contradicted", "insufficient", "unverified")}
+                         for status in ("supported", "contradicted", "insufficient", "unverified", "unsupported")}
         overall = "insufficient" if not summaries else (
             "contradicted" if status_counts["contradicted"] else
+            "unsupported" if status_counts["unsupported"] else
             "supported" if status_counts["supported"] == len(summaries) else "insufficient"
         )
         reason = (
