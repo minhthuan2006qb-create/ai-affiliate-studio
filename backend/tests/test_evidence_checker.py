@@ -74,6 +74,8 @@ def test_single_source_claim_is_insufficient_and_draft_stays_held(tmp_path, monk
     seed(path)
     add_item("i1", "s1", "Sự kiện diễn ra ngày 30/05/2026", "Bắt đầu lúc 20 giờ.")
     cp.process_item("i1")
+    cp.process_item("i2")
+    cp.process_item("i3")
     with hub.connect() as conn:
         draft_id = conn.execute("SELECT id FROM fb_drafts").fetchone()["id"]
     result = ec.check_draft(draft_id)
