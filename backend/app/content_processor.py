@@ -131,9 +131,16 @@ def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[i
     official_source_ids = {row["source_id"] for row in rows
                            if bool(row["is_official"]) or row["trust_level"] == "official"}
     official = len(official_source_ids)
-    trusted_groups = {publisher_group(row) for row in rows
-                      if publisher_group(row) and
-                      (row["trust_level"] in {"official", "established"} or bool(row["is_official"]))}
+    # Only an explicitly configured publisher_group can count as an independent
+    # trusted publisher. A hostname fallback is useful for displaying evidence,
+    # but it must not increase the trust gate: subdomains and syndication mirrors
+    # can otherwise look like separate publishers.
+    trusted_groups = {
+        str(row["publisher_group"] or "").strip().lower()
+        for row in rows
+        if str(row["publisher_group"] or "").strip()
+        and (row["trust_level"] in {"official", "established"} or bool(row["is_official"]))
+    }
     score = {0: 0, 1: 35, 2: 55, 3: 70}.get(len(hosts), 75)
     if not (item["summary"] or "").strip():
         score = min(score, 55)
@@ -149,7 +156,7 @@ def preliminary_signal(item: sqlite3.Row, matched: list[sqlite3.Row]) -> tuple[i
     reasons = [
         f"{len(hosts)} hostname khác nhau",
         f"{len(groups)} nhóm xuất bản (nhóm khai báo hoặc hostname dự phòng; chưa chứng minh độc lập)",
-        f"{len(trusted_groups)} nhóm có mức tin cậy đã cấu hình",
+        f"{len(trusted_groups)} nhóm nhà xuất bản độc lập được khai báo và có mức tin cậy; hostname chưa khai báo nhóm không được tính",
         f"{official} nguồn được đánh dấu chính thức",
         (f"Tuổi tin: khoảng {int(age_hours)} giờ" if age_hours is not None else "Không có thời điểm xuất bản hợp lệ; không thể đánh giá độ mới"),
     ]
