@@ -176,6 +176,28 @@ def check_draft(draft_id: str) -> dict[str, object]:
                               "status": status, "supporting_groups": len(trusted_groups),
                               "source_count": len(items)})
 
+        # Compare explicit factual tokens in the AI draft with source metadata.
+        for claim_type, value, normalized in extract_claims(draft["title"], draft["body"]):
+            if (claim_type, normalized) in observations:
+                continue
+            claim_id = hashlib.sha256(
+                ("claim:" + draft_id + ":" + claim_type + ":" + normalized).encode()
+            ).hexdigest()
+            rationale = (
+                "Dữ kiện xuất hiện trong bản viết nhưng không có trong tiêu đề/trích yếu "
+                "RSS đã thu thập. Có thể là chi tiết AI tự thêm; cần kiểm tra nguồn gốc."
+            )
+            conn.execute(
+                "INSERT INTO fb_evidence_claims "
+                "(id,draft_id,claim_type,claim_text,normalized_value,status,"
+                "supporting_groups,source_count,rationale,checked_at) "
+                "VALUES(?,?,?,?,?,'unsupported',0,0,?,?)",
+                (claim_id, draft_id, claim_type, value, normalized, rationale, checked_at),
+            )
+            summaries.append({"claim_type": claim_type, "value": value,
+                              "status": "unsupported", "supporting_groups": 0,
+                              "source_count": 0})
+
         # The checker records evidence but never approves a draft. RSS excerpts
         # cannot prove that every claim in an AI-rewritten body is accurate.
         status_counts = {status: sum(1 for item in summaries if item["status"] == status)
