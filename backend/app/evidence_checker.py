@@ -88,6 +88,8 @@ def check_draft(draft_id: str) -> dict[str, object]:
         draft = conn.execute("SELECT id, title, body, review_status FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
         if draft is None:
             return {"draft_id": draft_id, "status": "missing", "claims": 0}
+        # Rebuild evidence on each pass; cascade removes stale evidence records.
+        conn.execute("DELETE FROM fb_evidence_claims WHERE draft_id=?", (draft_id,))
         rows = conn.execute("""
           SELECT DISTINCT i.id AS item_id, i.title, i.summary, i.item_url,
                  s.id AS source_id, s.name AS source_name, s.trust_level,
