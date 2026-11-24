@@ -395,3 +395,48 @@ def review_draft(draft_id: str, payload: DraftReview):
                 """, (now(), draft_id))
         log(conn, "draft.reviewed", f"{draft_id}:{payload.review_status}")
     return {"ok": True, "review_status": payload.review_status}
+
+
+@router.get("/drafts/{draft_id}/evidence", dependencies=[Depends(require_hub_key)])
+def get_draft_evidence(draft_id: str):
+    # Import lazily: evidence_checker uses this module's DB helpers.
+    from .evidence_checker import ensure_evidence_schema
+
+    ensure_evidence_schema()
+    with connect() as conn:
+        draft = conn.execute(
+            "SELECT id, page_id, title, review_status, review_reason FROM fb_drafts WHERE id=?",
+            (draft_id,),
+        ).fetchone()
+        if draft is None:
+            raise HTTPException(404, "Không tìm thấy bản nháp.")
+        claims = conn.execute("""
+          SELECT id, claim_type, claim_text, normalized_value, status,
+                 supporting_groups, source_count, rationale, checked_at
+          FROM fb_evidence_claims
+          WHERE draft_id=?
+          ORDER BY CASE status
+            WHEN 'contradicted' THEN 0
+            WHEN 'insufficient' THEN 1
+            WHEN 'unverified' THEN 2
+            WHEN 'supported' THEN 3 ELSE 4 END, claim_type, normalized_value
+        """, (draft_id,)).fetchall()
+        result = []
+        for claim in claims:
+            records = conn.execute("""
+              SELECT source_item_id, source_id, publisher_group, source_url,
+                     excerpt, observed_value, trusted_group, collected_at
+              FROM fb_evidence_records
+              WHERE claim_id=?
+              ORDER BY trusted_group DESC, collected_at DESC
+            """, (claim["id"],)).fetchall()
+            item = dict(claim)
+            item["evidence"] = [dict(record) for record in records]
+            result.append(item)
+    return {
+        "draft": dict(draft),
+        "claim_count": len(result),
+        "claims": result,
+        "publication_allowed": False,
+        "notice": "Bằng chứng RSS chỉ hỗ trợ đối chiếu sơ bộ; chưa xác minh toàn văn nguồn gốc. Bản nháp vẫn cần kiểm tra trước khi xuất bản.",
+    }
