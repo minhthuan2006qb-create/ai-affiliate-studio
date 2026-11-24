@@ -70,6 +70,9 @@ def test_ai_rewrite_keeps_source_links_and_requires_human_review(tmp_path, monke
     cp.process_item("i1")
     with hub.connect() as conn:
         draft_id = conn.execute("SELECT id FROM fb_drafts").fetchone()["id"]
+        # Even a candidate that passed preliminary metadata checks must be held
+        # after AI rewriting until a separate evidence check is implemented.
+        conn.execute("UPDATE fb_drafts SET review_status='pending' WHERE id=?", (draft_id,))
     monkeypatch.setenv("AI_API_BASE_URL", "https://api.example/v1")
     monkeypatch.setenv("AI_API_KEY", "secret-test")
     monkeypatch.setenv("AI_MODEL", "test-model")
