@@ -52,6 +52,7 @@ def test_same_claim_supported_by_two_declared_trusted_groups(tmp_path, monkeypat
         conn.execute("UPDATE fb_sources SET trust_level='established', publisher_group='publisher-a' WHERE id='s1'")
         conn.execute("UPDATE fb_sources SET trust_level='established', publisher_group='publisher-b' WHERE id='s2'")
     cp.process_item("i1")
+    cp.process_item("i2")
     with hub.connect() as conn:
         draft_id = conn.execute("SELECT id FROM fb_drafts").fetchone()["id"]
     result = ec.check_draft(draft_id)
