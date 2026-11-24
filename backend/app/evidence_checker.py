@@ -13,13 +13,13 @@ from .facebook_hub import connect, init_hub_db, log, now
 # This is metadata-assisted triage, not natural-language fact verification.
 PATTERNS = {
     "date": re.compile(
-        r"(?<!\\d)(\\d{1,2}[/-]\\d{1,2}(?:[/-]\\d{2,4})?|"
-        r"\\d{1,2}\\s+tháng\\s+\\d{1,2}(?:\\s+năm\\s+\\d{4})?)(?!\\d)",
+        r"(?<!\d)(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|"
+        r"\d{1,2}\s+tháng\s+\d{1,2}(?:\s+năm\s+\d{4})?)(?!\d)",
         re.I,
     ),
-    "time": re.compile(r"(?<!\\d)(\\d{1,2}\\s*(?:giờ|h)(?:\\s*\\d{1,2}\\s*(?:phút|p)?)?)(?!\\w)", re.I),
+    "time": re.compile(r"(?<!\d)(\d{1,2}\s*(?:giờ|h)(?:\s*\d{1,2}\s*(?:phút|p)?)?)(?!\w)", re.I),
     "metric": re.compile(
-        r"(?<!\\w)(\\d+(?:[.,]\\d+)?)\\s*(%|triệu|tỷ|người|km|giờ|ngày|độ|đồng|lần|ca)\\b",
+        r"(?<!\w)(\d+(?:[.,]\d+)?)\s*(%|triệu|tỷ|người|km|giờ|ngày|độ|đồng|lần|ca)\b",
         re.I,
     ),
 }
@@ -58,17 +58,17 @@ def ensure_evidence_schema() -> None:
         CREATE INDEX IF NOT EXISTS idx_fb_evidence_draft
           ON fb_evidence_claims(draft_id, status);
         """)
-        
+
 
 def extract_claims(title: str, summary: str | None) -> list[tuple[str, str, str]]:
     text = " ".join(part for part in (title or "", summary or "") if part)
     found: dict[tuple[str, str], str] = {}
     for claim_type in ("date", "time"):
         for match in PATTERNS[claim_type].finditer(text):
-            value = re.sub(r"\\s+", " ", match.group(1)).strip()
+            value = re.sub(r"\s+", " ", match.group(1)).strip()
             found[(claim_type, value.casefold())] = value
     for match in PATTERNS["metric"].finditer(text):
-        value = re.sub(r"\\s+", " ", match.group(0)).strip()
+        value = re.sub(r"\s+", " ", match.group(0)).strip()
         unit = match.group(2).casefold()
         normalized = f"{match.group(1).replace(',', '.')} {unit}"
         found[(f"metric:{unit}", normalized)] = value
