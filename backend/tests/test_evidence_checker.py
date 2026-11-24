@@ -145,3 +145,39 @@ def test_ai_added_date_and_metric_are_flagged_unsupported(tmp_path, monkeypatch)
     # Re-checking must refresh rather than duplicate the ledger.
     again = ec.check_draft(draft_id)
     assert again["counts"]["unsupported"] >= 2
+
+
+def test_extracts_explicit_semantic_risk_cues():
+    claims = ec.extract_semantic_risk_claims(
+        'Ông Nguyễn Văn An thông báo tại Quảng Nam: “Chúng tôi sẽ tổ chức chương trình lớn”.'
+    )
+    values = {(kind, normalized) for kind, _, normalized in claims}
+    assert ("person", "nguyễn văn an") in values
+    assert ("place", "quảng nam") in values
+    assert ("quote", "chúng tôi sẽ tổ chức chương trình lớn") in values
+
+
+def test_ai_added_person_place_and_quote_are_flagged_unsupported(tmp_path, monkeypatch):
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    add_item("i1", "s1", "Thông báo sự kiện tại Đà Nẵng",
+             "Ban tổ chức đang chuẩn bị chương trình.")
+    cp.process_item("i1")
+    with hub.connect() as conn:
+        draft_id = conn.execute("SELECT id FROM fb_drafts").fetchone()["id"]
+        conn.execute(
+            "UPDATE fb_drafts SET title=?, body=? WHERE id=?",
+            ("Thông báo mới",
+             'Ông Nguyễn Văn An xác nhận tại Quảng Nam: “Chúng tôi sẽ tổ chức chương trình lớn”.',
+             draft_id),
+        )
+    result = ec.check_draft(draft_id)
+    assert result["counts"]["unsupported"] >= 3
+    with hub.connect() as conn:
+        types = {row["claim_type"] for row in conn.execute(
+            "SELECT claim_type FROM fb_evidence_claims WHERE draft_id=? AND status='unsupported'",
+            (draft_id,),
+        )}
+    assert {"person", "place", "quote"}.issubset(types)
+    assert result["status"] == "unsupported"
