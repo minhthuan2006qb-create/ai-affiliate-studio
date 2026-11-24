@@ -109,3 +109,35 @@ def test_disagreement_is_only_contradicted_when_both_values_have_independent_sup
     # One isolated disagreement is not strong enough to label a fact contradicted.
     assert result["counts"]["contradicted"] == 0
     assert result["status"] == "insufficient"
+
+
+
+def test_ai_added_date_and_metric_are_flagged_unsupported(tmp_path, monkeypatch):
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    add_item("i1", "s1", "Sự kiện tại Đà Nẵng", "Ban tổ chức đang chuẩn bị chương trình.")
+    cp.process_item("i1")
+    with hub.connect() as conn:
+        draft_id = conn.execute("SELECT id FROM fb_drafts").fetchone()["id"]
+        conn.execute(
+            "UPDATE fb_drafts SET title=?, body=? WHERE id=?",
+            ("Thông báo sự kiện", "Sự kiện diễn ra ngày 31/12/2026 với 99 người tham dự.", draft_id),
+        )
+    result = ec.check_draft(draft_id)
+    assert result["status"] == "unsupported"
+    assert result["counts"]["unsupported"] >= 2
+    with hub.connect() as conn:
+        claims = conn.execute(
+            "SELECT claim_type, normalized_value, status, source_count "
+            "FROM fb_evidence_claims WHERE draft_id=? AND status='unsupported'",
+            (draft_id,),
+        ).fetchall()
+        assert len(claims) >= 2
+        assert all(row["source_count"] == 0 for row in claims)
+        assert conn.execute(
+            "SELECT review_status FROM fb_drafts WHERE id=?", (draft_id,)
+        ).fetchone()[0] == "held"
+    # Re-checking must refresh rather than duplicate the ledger.
+    again = ec.check_draft(draft_id)
+    assert again["counts"]["unsupported"] >= 2
