@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .facebook_hub import connect, init_hub_db, log, now
+from .evidence_checker import check_draft
 
 
 def configured() -> bool:
@@ -169,7 +170,10 @@ def rewrite_draft(draft_id: str, client: httpx.Client | None = None) -> dict[str
               WHERE id=?
             """, (title, body, model, notes, review_reason, now(), draft_id))
             log(conn, "draft.ai_rewritten", f"{draft_id}: model={model}; human review required")
-        return {"draft_id": draft_id, "status": "done", "model": model}
+        evidence = check_draft(draft_id)
+        return {"draft_id": draft_id, "status": "done", "model": model,
+                "evidence_status": str(evidence["status"]),
+                "evidence_claims": str(evidence["claims"])}
     except Exception as exc:
         with connect() as conn:
             conn.execute("UPDATE fb_drafts SET writer_status='error', writer_notes=?, updated_at=? WHERE id=?",
