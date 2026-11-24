@@ -253,3 +253,43 @@ def test_same_url_without_material_new_information_stays_held(tmp_path, monkeypa
         body="Lễ hội pháo hoa quốc tế tại Đà Nẵng diễn ra mùa hè năm 2026 với nhiều đội thi.",
         confidence=90))
     assert repeat["review_status"] == "held"
+
+
+
+def test_distinct_hosts_without_declared_publisher_groups_do_not_count_as_independent(tmp_path, monkeypatch):
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    add_item(path, "i1", "s1", "Đà Nẵng tổ chức lễ hội pháo hoa", "https://news-a.example/a")
+    add_item(path, "i2", "s2", "Lễ hội pháo hoa Đà Nẵng tổ chức", "https://news-b.example/b")
+    add_item(path, "i3", "s3", "Đà Nẵng tổ chức lễ hội pháo hoa", "https://news-c.example/c")
+    with hub.connect() as conn:
+        for sid in ("s1", "s2", "s3"):
+            conn.execute("UPDATE fb_sources SET trust_level='established' WHERE id=?", (sid,))
+    result = cp.process_item("i1")
+    assert result["results"][0]["status"] == "held"
+    with hub.connect() as conn:
+        draft = conn.execute("SELECT * FROM fb_drafts").fetchone()
+        assert draft["review_status"] == "held"
+        assert "không được tính" in draft["review_reason"].lower()
+
+
+def test_multiple_hosts_in_one_publisher_group_count_as_one_trusted_group(tmp_path, monkeypatch):
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    add_item(path, "i1", "s1", "Đà Nẵng tổ chức lễ hội pháo hoa", "https://www.publisher.example/a")
+    add_item(path, "i2", "s2", "Lễ hội pháo hoa Đà Nẵng tổ chức", "https://news.publisher.example/b")
+    add_item(path, "i3", "s3", "Đà Nẵng tổ chức lễ hội pháo hoa", "https://media.publisher.example/c")
+    with hub.connect() as conn:
+        for sid in ("s1", "s2", "s3"):
+            conn.execute(
+                "UPDATE fb_sources SET trust_level='established', publisher_group='same-publisher' WHERE id=?",
+                (sid,),
+            )
+    result = cp.process_item("i1")
+    assert result["results"][0]["status"] == "held"
+    with hub.connect() as conn:
+        draft = conn.execute("SELECT * FROM fb_drafts").fetchone()
+        assert draft["review_status"] == "held"
+        assert "1 nhóm nhà xuất bản độc lập" in draft["review_reason"].lower()
