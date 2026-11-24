@@ -66,6 +66,12 @@ def test_same_claim_supported_by_two_declared_trusted_groups(tmp_path, monkeypat
                             (claim["id"],)).fetchone()[0] == 2
         draft = conn.execute("SELECT review_status FROM fb_drafts WHERE id=?", (draft_id,)).fetchone()
         assert draft["review_status"] == "held"
+    dashboard = hub.get_draft_evidence(draft_id)
+    assert dashboard["publication_allowed"] is False
+    assert dashboard["claim_count"] >= 1
+    date_claim = next(item for item in dashboard["claims"] if item["claim_type"] == "date")
+    assert len(date_claim["evidence"]) == 2
+    assert all(item["source_url"].startswith("https://") for item in date_claim["evidence"])
 
 
 def test_single_source_claim_is_insufficient_and_draft_stays_held(tmp_path, monkeypatch):
