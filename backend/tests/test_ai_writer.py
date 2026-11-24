@@ -79,6 +79,8 @@ def test_ai_rewrite_keeps_source_links_and_requires_human_review(tmp_path, monke
     client = FakeClient()
     result = aw.rewrite_draft(draft_id, client=client)
     assert result["status"] == "done"
+    assert result["evidence_status"] == "insufficient"
+    assert result["evidence_claims"] == "0"
     assert client.payload["json"]["messages"][1]["content"].find("Không suy đoán") >= 0
     prompt = json.loads(client.payload["json"]["messages"][1]["content"])
     assert prompt["page_editorial_profile"]["tone"] == "Gần gũi, ngắn gọn"
