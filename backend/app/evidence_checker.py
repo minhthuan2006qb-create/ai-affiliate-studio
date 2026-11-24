@@ -212,7 +212,8 @@ def check_draft(draft_id: str) -> dict[str, object]:
         reason = (
             f"Evidence Checker: {len(summaries)} dữ kiện; "
             f"supported={status_counts['supported']}, contradicted={status_counts['contradicted']}, "
-            f"insufficient={status_counts['insufficient']}, unverified={status_counts['unverified']}. "
+            f"insufficient={status_counts['insufficient']}, unverified={status_counts['unverified']}, "
+            f"unsupported={status_counts['unsupported']}. "
             "Đã lưu sổ bằng chứng; chưa xác minh toàn văn nguồn gốc và chưa được tự động xuất bản."
         )
         conn.execute("""
