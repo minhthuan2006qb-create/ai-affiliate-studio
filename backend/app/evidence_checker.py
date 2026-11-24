@@ -75,6 +75,34 @@ def extract_claims(title: str, summary: str | None) -> list[tuple[str, str, str]
     return [(kind, value, normalized) for (kind, normalized), value in found.items()]
 
 
+
+# Conservative semantic-risk cues. These patterns do not prove truth; they only
+# flag explicit quotations, named speakers and named places for human review.
+PERSON_PATTERN = re.compile(
+    r"\\b(?:ông|bà|anh|chị|th.s|tiến sĩ|bác sĩ|chủ tịch|giám đốc|"
+    r"thủ tướng|bộ trưởng|bí thư)\\s+([A-ZÀ-Ỹ][\\wÀ-ỹ]*(?:\\s+[A-ZÀ-Ỹ][\\wÀ-ỹ]*){0,4})",
+    re.I,
+)
+PLACE_PATTERN = re.compile(
+    r"\\b(?:tại|ở|đến|thuộc|trên địa bàn)\\s+"
+    r"([A-ZÀ-Ỹ][\\wÀ-ỹ]*(?:\\s+[A-ZÀ-Ỹ][\\wÀ-ỹ]*){0,4})"
+)
+QUOTE_PATTERN = re.compile(r"[“\"']([^”\"']{12,240})[”\"']")
+
+
+def extract_semantic_risk_claims(text: str) -> list[tuple[str, str, str]]:
+    found: dict[tuple[str, str], str] = {}
+    for kind, pattern in (("person", PERSON_PATTERN), ("place", PLACE_PATTERN),
+                          ("quote", QUOTE_PATTERN)):
+        for match in pattern.finditer(text or ""):
+            value = re.sub(r"\\s+", " ", match.group(1)).strip(" .,:;")
+            if len(value) < 3:
+                continue
+            normalized = value.casefold()
+            found[(kind, normalized)] = value
+    return [(kind, value, normalized)
+            for (kind, normalized), value in found.items()]
+
 def _trusted_group(row: sqlite3.Row) -> str:
     group = (row["publisher_group"] or "").strip().casefold()
     if group and (row["trust_level"] in {"official", "established"} or row["is_official"]):
@@ -177,6 +205,36 @@ def check_draft(draft_id: str) -> dict[str, object]:
             summaries.append({"claim_type": claim_type, "value": items[0]["value"],
                               "status": status, "supporting_groups": len(trusted_groups),
                               "source_count": len(items)})
+
+        # Compare explicit names, place cues and quotations in the AI draft
+        # with collected RSS text. Absence is a review signal, not proof of fabrication.
+        source_text = " ".join(
+            " ".join(part for part in (row["title"], row["summary"] or "") if part)
+            for row in rows
+        ).casefold()
+        for claim_type, value, normalized in extract_semantic_risk_claims(
+            " ".join((draft["title"] or "", draft["body"] or ""))
+        ):
+            if normalized in source_text:
+                continue
+            claim_id = hashlib.sha256(
+                ("claim:" + draft_id + ":" + claim_type + ":" + normalized).encode()
+            ).hexdigest()
+            rationale = (
+                "Tên riêng/trích dẫn xuất hiện trong bản viết nhưng không tìm thấy nguyên văn "
+                "trong dữ liệu RSS đã thu thập. Đây là tín hiệu cần kiểm tra bài gốc; "
+                "không phải kết luận nội dung sai."
+            )
+            conn.execute(
+                "INSERT INTO fb_evidence_claims "
+                "(id,draft_id,claim_type,claim_text,normalized_value,status,"
+                "supporting_groups,source_count,rationale,checked_at) "
+                "VALUES(?,?,?,?,?,'unsupported',0,0,?,?)",
+                (claim_id, draft_id, claim_type, value, normalized, rationale, checked_at),
+            )
+            summaries.append({"claim_type": claim_type, "value": value,
+                              "status": "unsupported", "supporting_groups": 0,
+                              "source_count": 0})
 
         # Compare explicit factual tokens in the AI draft with source metadata.
         for claim_type, value, normalized in extract_claims(draft["title"], draft["body"]):
