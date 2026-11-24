@@ -79,13 +79,13 @@ def extract_claims(title: str, summary: str | None) -> list[tuple[str, str, str]
 # Conservative semantic-risk cues. These patterns do not prove truth; they only
 # flag explicit quotations, named speakers and named places for human review.
 PERSON_PATTERN = re.compile(
-    r"\\b(?:ông|bà|anh|chị|th.s|tiến sĩ|bác sĩ|chủ tịch|giám đốc|"
-    r"thủ tướng|bộ trưởng|bí thư)\\s+([A-ZÀ-Ỹ][\\wÀ-ỹ]*(?:\\s+[A-ZÀ-Ỹ][\\wÀ-ỹ]*){0,4})",
+    r"\b(?:ông|bà|anh|chị|th.s|tiến sĩ|bác sĩ|chủ tịch|giám đốc|"
+    r"thủ tướng|bộ trưởng|bí thư)\s+([A-ZÀ-Ỹ][\wÀ-ỹ]*(?:\s+[A-ZÀ-Ỹ][\wÀ-ỹ]*){0,4})",
     re.I,
 )
 PLACE_PATTERN = re.compile(
-    r"\\b(?:tại|ở|đến|thuộc|trên địa bàn)\\s+"
-    r"([A-ZÀ-Ỹ][\\wÀ-ỹ]*(?:\\s+[A-ZÀ-Ỹ][\\wÀ-ỹ]*){0,4})"
+    r"\b(?:tại|ở|đến|thuộc|trên địa bàn)\s+"
+    r"([A-ZÀ-Ỹ][\wÀ-ỹ]*(?:\s+[A-ZÀ-Ỹ][\wÀ-ỹ]*){0,4})"
 )
 QUOTE_PATTERN = re.compile(r"[“\"']([^”\"']{12,240})[”\"']")
 
@@ -95,7 +95,7 @@ def extract_semantic_risk_claims(text: str) -> list[tuple[str, str, str]]:
     for kind, pattern in (("person", PERSON_PATTERN), ("place", PLACE_PATTERN),
                           ("quote", QUOTE_PATTERN)):
         for match in pattern.finditer(text or ""):
-            value = re.sub(r"\\s+", " ", match.group(1)).strip(" .,:;")
+            value = re.sub(r"\s+", " ", match.group(1)).strip(" .,:;")
             if len(value) < 3:
                 continue
             normalized = value.casefold()
