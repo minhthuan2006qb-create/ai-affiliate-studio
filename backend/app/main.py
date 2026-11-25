@@ -29,6 +29,7 @@ from .facebook_scheduler import router as facebook_scheduler_router
 from .facebook_meta import router as facebook_meta_router
 from .facebook_token_health import router as facebook_token_health_router
 from .facebook_publisher import router as facebook_publisher_router
+from .affiliate_tracking import router as affiliate_router, public_router as affiliate_public_router
 
 app = FastAPI(
     title="AI Affiliate Studio API",
@@ -41,6 +42,8 @@ app.include_router(facebook_scheduler_router)
 app.include_router(facebook_meta_router)
 app.include_router(facebook_token_health_router)
 app.include_router(facebook_publisher_router)
+app.include_router(affiliate_router)
+app.include_router(affiliate_public_router)
 
 app.add_middleware(
     CORSMiddleware,
