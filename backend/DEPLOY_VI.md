@@ -19,12 +19,28 @@ Hệ thống lưu dữ liệu trong file SQLite, nên máy chủ phải **giữ 
 Bạn cũng cần **một tên miền** (hoặc tên miền phụ miễn phí) trỏ về IP máy chủ, để có HTTPS.
 Meta bắt buộc HTTPS cho đăng nhập Facebook.
 
+### Tên miền: nên mua tên miền riêng
+
+- Không dùng tên miền phụ miễn phí kiểu DuckDNS/No-IP: các dịch vụ này hay bị lạm dụng để lừa đảo,
+  nên Facebook và phần mềm diệt virus thường chặn link của chúng. Bài đăng Facebook có link sẽ dễ bị chặn.
+- Mua một tên miền `.com` (hoặc đuôi khác) ở nhà đăng ký nhận chuyển khoản VNĐ. Tên miền `.vn` cần
+  thêm giấy tờ cá nhân.
+- Sau khi có máy chủ, vào trang quản lý tên miền, tạo **bản ghi A**: tên `@` (hoặc `tin`), giá trị là
+  **địa chỉ IP của VPS**. Chờ vài phút tới vài giờ để có hiệu lực.
+
+### VPS: cấu hình tối thiểu
+
+- Ubuntu 22.04 hoặc 24.04, 1 vCPU, 1 GB RAM (2 GB thì dư dả), 20 GB ổ cứng, có quyền root.
+- VPS đặt tại Việt Nam truy cập nhanh hơn cho người đọc trong nước.
+- Hỏi nhà cung cấp: giá gia hạn sau kỳ đầu, sao lưu, và có mở sẵn cổng 80/443 không.
+
 ## 2. Mở cửa sổ dòng lệnh trên máy chủ
 
+- VPS: hầu hết nhà cung cấp có "Web console"/"Console" trong trang quản lý, mở được trên trình duyệt điện thoại.
+  Hoặc cài ứng dụng SSH trên Android (ví dụ Termius hoặc JuiceSSH) và đăng nhập bằng IP, tài khoản `root`, mật khẩu nhà cung cấp gửi.
 - Oracle Cloud: trong trang quản lý máy ảo, dùng nút kết nối/Cloud Shell trên trình duyệt.
-- VPS khác: hầu hết có "Web console" trong trang quản lý.
 
-Trên Oracle, mở cổng 80 và 443 ở **hai chỗ**: Security List của mạng (trong trang web Oracle)
+Chỉ với Oracle: mở cổng 80 và 443 ở **hai chỗ**: Security List của mạng (trong trang web Oracle)
 và tường lửa bên trong máy:
 
 ```bash
@@ -37,6 +53,18 @@ sudo iptables -I INPUT 6 -p tcp --dport 443 -j ACCEPT
 
 ```bash
 sudo netfilter-persistent save
+```
+
+Với VPS 1 GB RAM, tạo thêm 2 GB bộ nhớ phụ (swap) để build không bị thiếu RAM (chạy một lần):
+
+```bash
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+Nếu VPS bật tường lửa `ufw`, mở cổng web:
+
+```bash
+sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
 ```
 
 ## 3. Cài Docker và lấy mã
