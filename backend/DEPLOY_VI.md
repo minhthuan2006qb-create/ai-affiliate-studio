@@ -103,6 +103,7 @@ nano .env
 - `SITE_DOMAIN=` tên miền của bạn, ví dụ `tin.example.com`.
 - `ALLOWED_ORIGINS=` địa chỉ trang bạn mở ứng dụng quản lý `facebook-hub.html`.
 - `PUBLIC_SITE_NAME=` tên website.
+- `PUBLIC_CONTACT_EMAIL=` email liên hệ hiện trên trang Chính sách quyền riêng tư (Meta yêu cầu khi tạo App).
 - Giữ `META_PUBLISHING_ENABLED=false` cho tới khi thử OAuth Meta xong.
 
 Lưu: bấm Ctrl+O, Enter, rồi Ctrl+X (bàn phím điện thoại: dùng phím Ctrl của ứng dụng terminal).

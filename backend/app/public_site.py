@@ -27,6 +27,7 @@ router = APIRouter(prefix="/site", tags=["Public website"], include_in_schema=Fa
 
 PUBLIC_STATUSES = ("approved", "published")
 SITE_NAME = os.getenv("PUBLIC_SITE_NAME", "Bản tin tổng hợp")
+CONTACT_EMAIL = os.getenv("PUBLIC_CONTACT_EMAIL", "").strip()
 # Everything from these markers onward in an AI-written body is reviewer/internal
 # material (source list, "not independently verified" note) and is rendered
 # separately or dropped on the public page.
@@ -123,9 +124,12 @@ def _page(title: str, body_html: str, description: str = "", og_type: str = "web
 <meta property="og:title" content="{_esc(title)}"><meta property="og:description" content="{_esc(description)}">
 <meta property="og:type" content="{og_type}"><style>{STYLE}</style></head><body>
 <header><a href="/site/">{_esc(SITE_NAME)}</a></header><main>{body_html}</main>
-<footer>Bài viết là bản tóm tắt được biên tập với sự hỗ trợ của AI và đã qua người kiểm duyệt.
+<footer>Bài viết là bản tóm tắt ngắn, được chọn lọc tự động từ các nguồn tin do trang lựa chọn
+theo bộ quy tắc kiểm tra của trang; có thể được biên tập với sự hỗ trợ của AI và vẫn có thể có sai sót.
 Thông tin đầy đủ và chính xác nhất nằm ở bài gốc. Một số liên kết sản phẩm là liên kết tiếp thị;
-trang có thể nhận hoa hồng khi bạn mua hàng, giá bạn trả không đổi.</footer></body></html>"""
+trang có thể nhận hoa hồng khi bạn mua hàng, giá bạn trả không đổi.
+<br><a href="/site/privacy">Chính sách quyền riêng tư</a> · <a href="/site/data-deletion">Yêu cầu xóa dữ liệu</a>
+</footer></body></html>"""
     response = HTMLResponse(doc)
     response.headers["Content-Security-Policy"] = CSP
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -157,7 +161,7 @@ def _list_query(where: str = "", params: tuple = ()) -> list:
 def site_home():
     rows = _list_query()
     return _page(SITE_NAME, "<h1>Bài mới</h1>" + _article_list(rows),
-                 "Tin tóm tắt đã qua kiểm duyệt, kèm liên kết bài gốc.")
+                 "Tin tóm tắt từ nguồn chọn lọc, kèm liên kết bài gốc.")
 
 
 @router.get("/p/{page_id}", response_class=HTMLResponse)
@@ -262,3 +266,66 @@ def site_article(key: str):
                 f'target="_blank">{_esc(p["label"])}</a></div>' for p in products)
             + "</section>")
     return _page(draft["title"], "".join(parts), _summary(text), "article")
+
+
+def _contact_html() -> str:
+    if CONTACT_EMAIL:
+        return f'<a href="mailto:{_esc(CONTACT_EMAIL)}">{_esc(CONTACT_EMAIL)}</a>'
+    return "địa chỉ email liên hệ của trang (đang được cập nhật)"
+
+
+@router.get("/privacy", response_class=HTMLResponse)
+def privacy_policy():
+    contact = _contact_html()
+    body = f"""<h1>Chính sách quyền riêng tư</h1>
+<p class="meta">Áp dụng cho website {_esc(SITE_NAME)} và các Facebook Page do trang quản lý.</p>
+<h2>1. Trang làm gì</h2>
+<p>Trang tổng hợp tiêu đề và đoạn trích ngắn từ các nguồn tin công khai (RSS), kèm liên kết tới bài gốc,
+và đăng các bản tóm tắt này lên website cùng các Facebook Page của trang.</p>
+<h2>2. Dữ liệu của người đọc website</h2>
+<ul>
+<li>Trang không yêu cầu đăng ký tài khoản và không dùng cookie quảng cáo hay theo dõi.</li>
+<li>Khi bạn nhấp một liên kết sản phẩm (dạng /go/...), trang ghi lại thời điểm nhấp, tên miền trang
+bạn đến từ đó và một mã ẩn danh được tính từ địa chỉ IP và trình duyệt kèm một chuỗi bí mật, thay đổi
+theo ngày. Trang <strong>không lưu địa chỉ IP hay thông tin trình duyệt gốc</strong>. Dữ liệu này chỉ
+dùng để đếm số lượt nhấp.</li>
+<li>Máy chủ có thể ghi nhật ký kỹ thuật tạm thời (ví dụ lỗi hệ thống) để vận hành và bảo mật.</li>
+</ul>
+<h2>3. Dữ liệu Facebook</h2>
+<ul>
+<li>Ứng dụng của trang chỉ kết nối với các Facebook Page do chính chủ trang quản lý, để đăng bài và kiểm
+tra tình trạng kết nối.</li>
+<li>Mã truy cập (token) của Page được mã hóa khi lưu trên máy chủ và không chia sẻ cho bên thứ ba.</li>
+<li>Trang không thu thập thông tin cá nhân của người dùng Facebook, không đọc tin nhắn và không thu
+thập danh sách người theo dõi.</li>
+</ul>
+<h2>4. Liên kết tiếp thị</h2>
+<p>Một số liên kết sản phẩm là liên kết tiếp thị liên kết (ví dụ Shopee). Khi bạn mua hàng qua liên kết
+này, trang có thể nhận hoa hồng; giá bạn trả không đổi. Sau khi rời khỏi trang, việc xử lý dữ liệu do
+website đích thực hiện theo chính sách của họ.</p>
+<h2>5. Chia sẻ dữ liệu</h2>
+<p>Trang không bán và không chia sẻ dữ liệu cá nhân. Nếu bật tính năng biên tập bằng AI, trang chỉ gửi
+tiêu đề và đoạn trích tin công khai tới nhà cung cấp AI, không gửi dữ liệu của người đọc.</p>
+<h2>6. Liên hệ và xóa dữ liệu</h2>
+<p>Liên hệ: {contact}. Hướng dẫn xóa dữ liệu: <a href="/site/data-deletion">xem tại đây</a>.</p>"""
+    return _page(f"Chính sách quyền riêng tư · {SITE_NAME}", body,
+                 "Chính sách quyền riêng tư của trang.")
+
+
+@router.get("/data-deletion", response_class=HTMLResponse)
+def data_deletion():
+    contact = _contact_html()
+    body = f"""<h1>Hướng dẫn yêu cầu xóa dữ liệu</h1>
+<p>Trang không tạo tài khoản người dùng và không lưu thông tin cá nhân có thể nhận dạng trực tiếp của
+người đọc hay người dùng Facebook.</p>
+<h2>Người đọc website</h2>
+<p>Lượt nhấp liên kết chỉ được lưu dưới dạng mã ẩn danh thay đổi theo ngày, nên trang không thể xác định
+lượt nhấp nào là của bạn. Nếu vẫn muốn hỏi hoặc yêu cầu xóa, hãy gửi email tới {contact}.</p>
+<h2>Người dùng Facebook</h2>
+<p>Ứng dụng của trang không lưu dữ liệu cá nhân của người dùng Facebook. Nếu bạn đã cấp quyền cho ứng
+dụng, bạn có thể gỡ ứng dụng trong Facebook: <em>Cài đặt và quyền riêng tư → Cài đặt → Ứng dụng và
+trang web</em>, chọn ứng dụng và bấm <em>Gỡ</em>. Khi chủ Page ngắt kết nối, mã truy cập của Page bị
+xóa khỏi máy chủ.</p>
+<h2>Gửi yêu cầu</h2>
+<p>Gửi email tới {contact} với tiêu đề “Yêu cầu xóa dữ liệu”. Trang sẽ phản hồi trong vòng 30 ngày.</p>"""
+    return _page(f"Yêu cầu xóa dữ liệu · {SITE_NAME}", body, "Hướng dẫn yêu cầu xóa dữ liệu.")

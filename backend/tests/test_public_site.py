@@ -161,3 +161,28 @@ def test_public_body_drops_candidate_system_notes():
             "không dùng làm thông báo sự kiện hoặc tự động xuất bản.\n"
             "Nguồn đối chiếu bổ sung: Báo B.")
     assert public_body(body) == "Ban tổ chức thông báo lễ hội."
+
+
+def test_privacy_and_data_deletion_pages(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("PUBLIC_CONTACT_EMAIL", "info@example.test")
+    import app.public_site as ps
+    importlib.reload(ps)
+    main = load_hub_app(tmp_path, monkeypatch)
+    try:
+        with TestClient(main.app) as client:
+            privacy = client.get("/site/privacy")
+            assert privacy.status_code == 200
+            assert "Chính sách quyền riêng tư" in privacy.text
+            assert "mailto:info@example.test" in privacy.text
+            assert "không lưu địa chỉ IP" in privacy.text
+            deletion = client.get("/site/data-deletion")
+            assert deletion.status_code == 200 and "Yêu cầu xóa dữ liệu" in deletion.text
+            home = client.get("/site/").text
+            assert 'href="/site/privacy"' in home
+            # The footer must not claim a human reviewed every post.
+            assert "đã qua người kiểm duyệt" not in home
+    finally:
+        monkeypatch.delenv("PUBLIC_CONTACT_EMAIL")
+        importlib.reload(ps)
+        importlib.reload(main)
