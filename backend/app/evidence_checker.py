@@ -78,14 +78,19 @@ def extract_claims(title: str, summary: str | None) -> list[tuple[str, str, str]
 
 # Conservative semantic-risk cues. These patterns do not prove truth; they only
 # flag explicit quotations, named speakers and named places for human review.
+# Uppercase letters only (ASCII + Vietnamese). Name parts must start with one of
+# these; no global re.I, otherwise verbs after a name ("thông báo") or common
+# words after a preposition ("đến đây") would be captured as names.
+_UPPER = "A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝĂĐĨŨƠƯẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲỴỶỸ"
+# Words of a name are separated by spaces/tabs only, never by a line break, so a
+# title and the first word of the body cannot merge into one name.
+_NAME = rf"([{_UPPER}]\w*(?:[ \t]+[{_UPPER}]\w*){{0,4}})"
 PERSON_PATTERN = re.compile(
-    r"\b(?:ông|bà|anh|chị|th.s|tiến sĩ|bác sĩ|chủ tịch|giám đốc|"
-    r"thủ tướng|bộ trưởng|bí thư)\s+([A-ZÀ-Ỹ][\wÀ-ỹ]*(?:\s+[A-ZÀ-Ỹ][\wÀ-ỹ]*){0,4})",
-    re.I,
+    r"\b(?i:ông|bà|anh|chị|th\.?s|tiến sĩ|bác sĩ|chủ tịch|giám đốc|"
+    r"thủ tướng|bộ trưởng|bí thư)[ \t]+" + _NAME
 )
 PLACE_PATTERN = re.compile(
-    r"\b(?:tại|ở|đến|thuộc|trên địa bàn)\s+"
-    r"([A-ZÀ-Ỹ][\wÀ-ỹ]*(?:\s+[A-ZÀ-Ỹ][\wÀ-ỹ]*){0,4})"
+    r"\b(?i:tại|ở|đến|thuộc|trên địa bàn)[ \t]+" + _NAME
 )
 QUOTE_PATTERN = re.compile(r"[“\"']([^”\"']{12,240})[”\"']")
 
@@ -213,7 +218,7 @@ def check_draft(draft_id: str) -> dict[str, object]:
             for row in rows
         ).casefold()
         for claim_type, value, normalized in extract_semantic_risk_claims(
-            " ".join((draft["title"] or "", draft["body"] or ""))
+            "\n".join((draft["title"] or "", draft["body"] or ""))
         ):
             if normalized in source_text:
                 continue

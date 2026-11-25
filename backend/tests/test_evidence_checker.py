@@ -181,3 +181,23 @@ def test_ai_added_person_place_and_quote_are_flagged_unsupported(tmp_path, monke
         )}
     assert {"person", "place", "quote"}.issubset(types)
     assert result["status"] == "unsupported"
+
+
+def test_person_name_stops_before_lowercase_verb():
+    claims = ec.extract_semantic_risk_claims("Ông Nguyễn Văn An thông báo kế hoạch mới.")
+    values = {(kind, normalized) for kind, _, normalized in claims}
+    assert ("person", "nguyễn văn an") in values
+    assert not any("thông báo" in normalized for _, normalized in values)
+
+
+def test_common_words_after_prepositions_are_not_places():
+    claims = ec.extract_semantic_risk_claims(
+        "Mọi người đến đây sớm. Xe dừng ở đó khá lâu. Ông ấy nói tại chỗ."
+    )
+    assert [c for c in claims if c[0] in {"place", "person"}] == []
+
+
+def test_title_and_body_do_not_merge_into_one_place():
+    claims = ec.extract_semantic_risk_claims("Lễ hội pháo hoa tại Đà Nẵng\nMột số nguồn đưa tin.")
+    places = {normalized for kind, _, normalized in claims if kind == "place"}
+    assert places == {"đà nẵng"}
