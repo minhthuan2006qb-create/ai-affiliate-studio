@@ -30,7 +30,8 @@ SITE_NAME = os.getenv("PUBLIC_SITE_NAME", "Bản tin tổng hợp")
 # Everything from these markers onward in an AI-written body is reviewer/internal
 # material (source list, "not independently verified" note) and is rendered
 # separately or dropped on the public page.
-INTERNAL_MARKERS = ("\n\nNguồn tham khảo (liên kết gốc):", "\n\nLưu ý: Bản viết lại bằng AI")
+INTERNAL_MARKERS = ("\n\nNguồn tham khảo", "\n\nLưu ý: Bản viết lại bằng AI",
+                    "\nGhi chú hệ thống:", "\nNguồn đối chiếu bổ sung:")
 URL_RE = re.compile(r"https?://[^\s<>\"']+")
 CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; "
        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")

@@ -29,6 +29,7 @@ from .facebook_scheduler import router as facebook_scheduler_router
 from .facebook_meta import router as facebook_meta_router
 from .facebook_token_health import router as facebook_token_health_router
 from .facebook_publisher import router as facebook_publisher_router
+from .auto_approval import router as automation_router
 from .public_site import router as public_site_router
 from .page_issues import router as page_issues_router
 from .affiliate_tracking import router as affiliate_router, public_router as affiliate_public_router
@@ -46,6 +47,7 @@ app.include_router(facebook_token_health_router)
 app.include_router(facebook_publisher_router)
 app.include_router(affiliate_router)
 app.include_router(page_issues_router)
+app.include_router(automation_router)
 app.include_router(affiliate_public_router)
 app.include_router(public_site_router)
 

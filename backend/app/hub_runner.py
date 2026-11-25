@@ -87,9 +87,17 @@ def _token_cycle() -> str:
     return f"pages={len(results)} " + ",".join(r["health_status"] for r in results)
 
 
+def _automation_cycle() -> str:
+    from .auto_approval import run_automation
+    result = run_automation()
+    return (f"pages={result['pages']} approved={result['approved']} held={result['held']} "
+            f"scheduled={result['scheduled']} stopped={len(result['stopped'])}")
+
+
 def build_tasks(source_minutes: int) -> list[tuple[str, int, Callable[[], str]]]:
     return [
         ("sources", source_minutes * 60, _sources_cycle),
+        ("automation", 300, _automation_cycle),
         ("schedule", 60, _schedule_cycle),
         ("publish", 30, _publish_cycle),
         ("token_health", 12 * 3600, _token_cycle),

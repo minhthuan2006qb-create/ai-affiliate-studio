@@ -151,3 +151,13 @@ def test_readable_article_urls_and_old_links_redirect(tmp_path, monkeypatch):
             conn.execute("UPDATE fb_drafts SET review_status='held'")
         assert client.get(canonical, follow_redirects=False).status_code == 404
         assert client.get(f"/site/a/{long_id}", follow_redirects=False).status_code == 404
+
+
+def test_public_body_drops_candidate_system_notes():
+    from app.public_site import public_body
+    body = ("Ban tổ chức thông báo lễ hội.\n\n"
+            "Nguồn tham khảo: Báo A (https://a.example/1).\n"
+            "Ghi chú hệ thống: điểm 60. Đây là bản nháp thu thập thông tin, chưa được xác minh độc lập; "
+            "không dùng làm thông báo sự kiện hoặc tự động xuất bản.\n"
+            "Nguồn đối chiếu bổ sung: Báo B.")
+    assert public_body(body) == "Ban tổ chức thông báo lễ hội."

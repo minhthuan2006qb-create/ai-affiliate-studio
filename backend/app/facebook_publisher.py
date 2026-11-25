@@ -160,7 +160,9 @@ def _preflight_and_publish(item: dict) -> dict:
             if not _still_eligible_to_send(item):
                 return {"schedule_id": schedule_id, "state": "blocked",
                         "message": "Điều kiện an toàn đã thay đổi trước khi gửi."}
-            message = item["title"].strip() + "\n\n" + item["body"].strip()
+            from .public_site import public_body
+            # Never post reviewer/system notes that live in the draft body.
+            message = item["title"].strip() + "\n\n" + public_body(item["body"] or "")
             if item.get("source_url"):
                 message += "\n\nNguồn tham khảo: " + item["source_url"].strip()
             response = client.post(

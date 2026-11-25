@@ -165,61 +165,72 @@ def write_settings(page_id: str, payload: ScheduleSettings):
     return {"ok": True, "page_id": page_id}
 
 
+def plan_page(conn, page_id: str, days: int, newest_first: bool = False,
+              only_draft_ids: set[str] | None = None) -> list[dict]:
+    """Place approved, unscheduled drafts into the Page's free posting slots."""
+    stamp = datetime.now(timezone.utc)
+    created: list[dict] = []
+    settings = get_settings(conn, page_id)
+    zone = ZoneInfo(settings["timezone"])
+    order = "d.created_at DESC" if newest_first else "d.confidence DESC, d.created_at ASC"
+    drafts = conn.execute(f"""
+      SELECT d.* FROM fb_drafts d
+      WHERE d.page_id=? AND d.review_status='approved'
+        AND NOT EXISTS (SELECT 1 FROM fb_publish_schedule q WHERE q.draft_id=d.id)
+      ORDER BY {order}
+    """, (page_id,)).fetchall()
+    if only_draft_ids is not None:
+        drafts = [d for d in drafts if d["id"] in only_draft_ids]
+    existing = conn.execute("""
+      SELECT planned_at FROM fb_publish_schedule
+      WHERE page_id=? AND state IN ('queued','ready','publishing','published') ORDER BY planned_at
+    """, (page_id,)).fetchall()
+    occupied = [datetime.fromisoformat(row["planned_at"]).astimezone(zone) for row in existing]
+    for draft in drafts:
+        chosen = None
+        for offset in range(days):
+            day = (stamp.astimezone(zone).date() + timedelta(days=offset))
+            day_count = sum(1 for item in occupied if item.date() == day)
+            if day_count >= settings["max_posts_per_day"]:
+                continue
+            for clock in settings["posting_times"]:
+                hour, minute = map(int, clock.split(":"))
+                candidate = datetime.combine(day, time(hour, minute), tzinfo=zone)
+                if candidate <= stamp.astimezone(zone):
+                    continue
+                if any(abs((candidate - item).total_seconds()) < settings["min_interval_minutes"] * 60
+                       for item in occupied):
+                    continue
+                chosen = candidate
+                break
+            if chosen:
+                break
+        if chosen is None:
+            break
+        queue_id = str(uuid.uuid4())
+        planned = chosen.astimezone(timezone.utc).isoformat()
+        conn.execute("""
+          INSERT INTO fb_publish_schedule
+            (id,page_id,draft_id,planned_at,state,created_at,updated_at,content_hash)
+          VALUES(?,?,?,?,'queued',?,?,?)
+        """, (queue_id, page_id, draft["id"], planned, now(), now(),
+              draft_content_hash(draft)))
+        occupied.append(chosen)
+        created.append({"id": queue_id, "draft_id": draft["id"], "title": draft["title"],
+                        "planned_at": planned, "state": "queued"})
+    return created
+
+
 @router.post("/pages/{page_id}/schedule/plan")
 def build_schedule(page_id: str, payload: PlanRequest):
     init_scheduler_db()
-    stamp = datetime.now(timezone.utc)
-    created = []
     with connect() as conn:
         if not conn.execute("SELECT 1 FROM fb_pages WHERE id=?", (page_id,)).fetchone():
             raise HTTPException(404, "Không tìm thấy Page.")
         settings = get_settings(conn, page_id)
         if not settings["enabled"]:
             raise HTTPException(409, "Lịch của Page đang tạm dừng. Hãy bật lịch trước.")
-        zone = ZoneInfo(settings["timezone"])
-        drafts = conn.execute("""
-          SELECT d.* FROM fb_drafts d
-          WHERE d.page_id=? AND d.review_status='approved'
-            AND NOT EXISTS (SELECT 1 FROM fb_publish_schedule q WHERE q.draft_id=d.id)
-          ORDER BY d.confidence DESC, d.created_at ASC
-        """, (page_id,)).fetchall()
-        existing = conn.execute("""
-          SELECT planned_at FROM fb_publish_schedule
-          WHERE page_id=? AND state IN ('queued','ready') ORDER BY planned_at
-        """, (page_id,)).fetchall()
-        occupied = [datetime.fromisoformat(row["planned_at"]).astimezone(zone) for row in existing]
-        for draft in drafts:
-            chosen = None
-            for offset in range(payload.days):
-                day = (stamp.astimezone(zone).date() + timedelta(days=offset))
-                day_count = sum(1 for item in occupied if item.date() == day)
-                if day_count >= settings["max_posts_per_day"]:
-                    continue
-                for clock in settings["posting_times"]:
-                    hour, minute = map(int, clock.split(":"))
-                    candidate = datetime.combine(day, time(hour, minute), tzinfo=zone)
-                    if candidate <= stamp.astimezone(zone):
-                        continue
-                    if any(abs((candidate - item).total_seconds()) < settings["min_interval_minutes"] * 60
-                           for item in occupied):
-                        continue
-                    chosen = candidate
-                    break
-                if chosen:
-                    break
-            if chosen is None:
-                break
-            queue_id = str(uuid.uuid4())
-            planned = chosen.astimezone(timezone.utc).isoformat()
-            conn.execute("""
-              INSERT INTO fb_publish_schedule
-                (id,page_id,draft_id,planned_at,state,created_at,updated_at,content_hash)
-              VALUES(?,?,?,?,'queued',?,?,?)
-            """, (queue_id, page_id, draft["id"], planned, now(), now(),
-                  draft_content_hash(draft)))
-            occupied.append(chosen)
-            created.append({"id": queue_id, "draft_id": draft["id"], "title": draft["title"],
-                            "planned_at": planned, "state": "queued"})
+        created = plan_page(conn, page_id, payload.days)
         log(conn, "schedule.planned", f"{page_id}: {len(created)} item(s)")
     return {"created": created, "count": len(created),
             "note": "Đây là lịch nội bộ; chưa gửi bài lên Facebook."}

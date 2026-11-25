@@ -39,4 +39,4 @@ def test_real_tasks_run_once_without_network_or_keys(tmp_path, monkeypatch):
         entry = hub_runner.run_task(name, interval, func)
         assert entry["status"] == "ok", entry
     with hub.connect() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM fb_worker_heartbeats").fetchone()[0] == 4
+        assert conn.execute("SELECT COUNT(*) FROM fb_worker_heartbeats").fetchone()[0] == 5

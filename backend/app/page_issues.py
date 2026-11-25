@@ -47,7 +47,8 @@ def _issue(page, category, severity, title, detail, ref_type="", ref_id="", at=N
 
 WORKER_TASK_LABELS = {"sources": "Lấy tin RSS, phân loại, kiểm tra bằng chứng",
                       "schedule": "Kiểm tra lịch đăng", "publish": "Đăng bài Facebook",
-                      "token_health": "Kiểm tra token Facebook"}
+                      "token_health": "Kiểm tra token Facebook",
+                      "automation": "Tự duyệt và tự xếp lịch"}
 
 
 def _worker_issues(conn) -> list[dict]:
@@ -209,7 +210,15 @@ def collect_issues(page_id: str | None = None) -> list[dict]:
                                      f"{title}: {q['title']}", detail, "schedule", q["id"],
                                      q["updated_at"]))
 
-        # 5. Background worker health (applies to every Page).
+        # 5. Automatic approval stopped (by the owner or by repeated publish failures).
+        if _table_exists(conn, "fb_page_automation"):
+            for row in conn.execute(f"""SELECT page_id, stopped_reason, updated_at FROM fb_page_automation
+              WHERE page_id IN ({marks}) AND auto_approve=0 AND stopped_reason!=''""", ids):
+                issues.append(_issue(page_by_id[row["page_id"]], "publish", "warning",
+                                     "Tự duyệt và tự xếp lịch đang dừng", row["stopped_reason"],
+                                     "page", row["page_id"], row["updated_at"]))
+
+        # 6. Background worker health (applies to every Page).
         issues.extend(_worker_issues(conn))
 
     issues.sort(key=lambda i: (SEVERITY_ORDER[i["severity"]], i["page_name"], -_ts(i["at"])))
