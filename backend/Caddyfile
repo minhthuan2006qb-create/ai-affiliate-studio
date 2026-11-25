@@ -1,0 +1,5 @@
+# Automatic HTTPS for the Hub API and public site. SITE_DOMAIN comes from .env.
+{$SITE_DOMAIN} {
+	encode gzip
+	reverse_proxy api:8000
+}

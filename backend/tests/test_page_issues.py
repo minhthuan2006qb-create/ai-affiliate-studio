@@ -80,7 +80,7 @@ def test_issues_collect_content_source_and_page_problems(tmp_path, monkeypatch):
         assert data["counts"]["critical"] >= 1
 
         only_p2 = client.get("/api/facebook-hub/issues?page_id=p2", headers=HEADERS).json()
-        assert {i["page_id"] for i in only_p2["items"]} == {"p2"}
+        assert {i["page_id"] for i in only_p2["items"]} - {None} == {"p2"}
         assert client.get("/api/facebook-hub/issues?page_id=nope", headers=HEADERS).status_code == 404
 
         # A successful poll clears the source error.
@@ -118,3 +118,26 @@ def test_token_and_publish_problems_are_reported(tmp_path, monkeypatch):
         assert fb and fb[0]["severity"] == "critical" and fb[0]["page_id"] == "p1"
         pub = [i for i in data["items"] if i["category"] == "publish"]
         assert pub and pub[0]["severity"] == "critical" and "đăng trùng" in pub[0]["detail"]
+
+
+def test_worker_heartbeat_issues(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    main = load_hub_app(tmp_path, monkeypatch)
+    import app.facebook_hub as hub
+    from app import hub_runner
+    with TestClient(main.app) as client:
+        seed(hub)
+        system = [i for i in client.get("/api/facebook-hub/issues", headers=HEADERS).json()["items"]
+                  if i["category"] == "system"]
+        assert system and "chưa từng chạy" in system[0]["title"]
+
+        hub_runner.record_heartbeat("sources", "ok", "sources=1", 1800)
+        system = [i for i in client.get("/api/facebook-hub/issues", headers=HEADERS).json()["items"]
+                  if i["category"] == "system"]
+        assert system == []
+
+        with hub.connect() as conn:
+            conn.execute("UPDATE fb_worker_heartbeats SET last_run_at='2020-01-01T00:00:00+00:00'")
+        system = [i for i in client.get("/api/facebook-hub/issues", headers=HEADERS).json()["items"]
+                  if i["category"] == "system"]
+        assert system[0]["severity"] == "critical" and "đã dừng" in system[0]["title"]

@@ -115,7 +115,7 @@ $('addLink').onclick=async()=>{try{const r=await request('/api/facebook-hub/affi
 $('addCommission').onclick=async()=>{try{await request('/api/facebook-hub/affiliate/commissions',{method:'POST',body:JSON.stringify({order_ref:$('comOrder').value,order_date:$('comDate').value,amount_vnd:Number($('comAmount').value),status:$('comStatus').value,link_code:$('comLink').value.trim()||null,page_id:$('comPage').value||null})});$('comOrder').value='';$('comAmount').value='';await loadAffiliate();msg('Đã lưu hoa hồng.')}catch(e){msg(e.message,true)}};
 $('importCommission').onclick=async()=>{try{const r=await request('/api/facebook-hub/affiliate/commissions/import',{method:'POST',body:JSON.stringify({csv_text:$('comCsv').value})});await loadAffiliate();msg('Đã nhập '+r.created+' dòng mới, cập nhật '+r.updated+' dòng'+(r.errors.length?'. Lỗi: '+r.errors.join('; '):'.'),r.errors.length>0)}catch(e){msg(e.message,true)}};
 const ISSUE_LEVEL={critical:['Nghiêm trọng','var(--danger)'],warning:['Cảnh báo','var(--warn)'],info:['Thông tin','var(--muted)']};
-const ISSUE_CAT={content:'Nội dung',source:'Nguồn tin',facebook:'Facebook',publish:'Đăng bài'};
+const ISSUE_CAT={content:'Nội dung',source:'Nguồn tin',facebook:'Facebook',publish:'Đăng bài',system:'Hệ thống'};
 async function loadIssues(){
  const pid=$('issuePage').value;const data=await request('/api/facebook-hub/issues'+(pid?'?page_id='+encodeURIComponent(pid):''));
  const keep=$('issuePage').value;$('issuePage').innerHTML='<option value="">Tất cả Page</option>'+pages.map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');$('issuePage').value=keep;

@@ -40,9 +40,39 @@ def _ts(value: str | None) -> float:
 
 def _issue(page, category, severity, title, detail, ref_type="", ref_id="", at=None):
     return {"page_id": page["id"] if page else None,
-            "page_name": page["name"] if page else "Không gắn Page",
+            "page_name": page["name"] if page else "Toàn hệ thống",
             "category": category, "severity": severity, "title": title,
             "detail": detail, "ref_type": ref_type, "ref_id": ref_id, "at": at}
+
+
+WORKER_TASK_LABELS = {"sources": "Lấy tin RSS, phân loại, kiểm tra bằng chứng",
+                      "schedule": "Kiểm tra lịch đăng", "publish": "Đăng bài Facebook",
+                      "token_health": "Kiểm tra token Facebook"}
+
+
+def _worker_issues(conn) -> list[dict]:
+    if not _table_exists(conn, "fb_worker_heartbeats"):
+        return [_issue(None, "system", "warning", "Worker nền chưa từng chạy",
+                       "Chưa có tín hiệu từ hub_runner. Nguồn tin sẽ không được cập nhật "
+                       "tự động cho tới khi worker chạy.")]
+    found = []
+    beats = {row["task"]: row for row in conn.execute("SELECT * FROM fb_worker_heartbeats")}
+    if "sources" not in beats:
+        found.append(_issue(None, "system", "warning", "Worker lấy tin chưa từng chạy",
+                            "Chưa có tín hiệu từ tác vụ lấy tin RSS."))
+    current = datetime.now(timezone.utc).timestamp()
+    for task, row in beats.items():
+        label = WORKER_TASK_LABELS.get(task, task)
+        # Allow three missed intervals (min. 15 minutes) before calling it stopped.
+        allowed = max(900, 3 * (row["interval_seconds"] or 0))
+        if current - _ts(row["last_run_at"]) > allowed:
+            found.append(_issue(None, "system", "critical", f"Worker đã dừng: {label}",
+                                f"Lần chạy cuối: {row['last_run_at']}. Kiểm tra máy chủ.",
+                                "worker", task, row["last_run_at"]))
+        elif row["last_status"] == "error":
+            found.append(_issue(None, "system", "warning", f"Worker gặp lỗi: {label}",
+                                row["last_message"] or "", "worker", task, row["last_run_at"]))
+    return found
 
 
 def collect_issues(page_id: str | None = None) -> list[dict]:
@@ -58,7 +88,7 @@ def collect_issues(page_id: str | None = None) -> list[dict]:
         page_by_id = {p["id"]: p for p in pages}
         ids = list(page_by_id)
         if not ids:
-            return []
+            return _worker_issues(conn)
         marks = ",".join("?" * len(ids))
 
         # 1. Content held back or flagged by the evidence ledger.
@@ -171,6 +201,9 @@ def collect_issues(page_id: str | None = None) -> list[dict]:
                 issues.append(_issue(page_by_id[q["page_id"]], "publish", severity,
                                      f"{title}: {q['title']}", detail, "schedule", q["id"],
                                      q["updated_at"]))
+
+        # 5. Background worker health (applies to every Page).
+        issues.extend(_worker_issues(conn))
 
     issues.sort(key=lambda i: (SEVERITY_ORDER[i["severity"]], i["page_name"], -_ts(i["at"])))
     return issues
