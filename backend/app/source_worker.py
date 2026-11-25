@@ -76,6 +76,23 @@ def ensure_schema(path: Path | None = None) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_fb_source_items_seen ON fb_source_items(first_seen_at DESC);
         """)
+        ensure_source_health_columns(conn)
+
+
+SOURCE_HEALTH_COLUMNS = {
+    "last_poll_status": "TEXT NOT NULL DEFAULT ''",
+    "last_error": "TEXT NOT NULL DEFAULT ''",
+    "last_success_at": "TEXT",
+    "consecutive_failures": "INTEGER NOT NULL DEFAULT 0",
+}
+
+
+def ensure_source_health_columns(conn: sqlite3.Connection) -> None:
+    """Per-source poll health, used by the Page issues view."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(fb_sources)")}
+    for name, declaration in SOURCE_HEALTH_COLUMNS.items():
+        if name not in columns:
+            conn.execute(f"ALTER TABLE fb_sources ADD COLUMN {name} {declaration}")
 
 
 def validate_public_feed_url(url: str) -> None:
@@ -193,7 +210,9 @@ def poll_source(source_id: str, path: Path | None = None, fetcher=fetch_feed) ->
                 )
                 inserted += cur.rowcount
             stamp = now()
-            conn.execute("UPDATE fb_sources SET last_checked_at=? WHERE id=?", (stamp, source_id))
+            conn.execute("""UPDATE fb_sources SET last_checked_at=?, last_poll_status='success',
+              last_error='', last_success_at=?, consecutive_failures=0 WHERE id=?""",
+              (stamp, stamp, source_id))
             conn.execute(
                 "INSERT INTO fb_activity VALUES(?,?,?,?,?)",
                 (hashlib.sha256(f"{source_id}:{stamp}".encode()).hexdigest(), "source.polled", "success",
@@ -202,7 +221,9 @@ def poll_source(source_id: str, path: Path | None = None, fetcher=fetch_feed) ->
             return {"source_id": source_id, "status": "success", "items_seen": len(items), "new_items": inserted}
         except Exception as exc:
             stamp = now()
-            conn.execute("UPDATE fb_sources SET last_checked_at=? WHERE id=?", (stamp, source_id))
+            conn.execute("""UPDATE fb_sources SET last_checked_at=?, last_poll_status='error',
+              last_error=?, consecutive_failures=consecutive_failures+1 WHERE id=?""",
+              (stamp, str(exc)[:350], source_id))
             conn.execute(
                 "INSERT INTO fb_activity VALUES(?,?,?,?,?)",
                 (hashlib.sha256(f"{source_id}:{stamp}:error".encode()).hexdigest(), "source.polled", "error",
