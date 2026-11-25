@@ -15,10 +15,11 @@ from __future__ import annotations
 import html
 import os
 import re
+import unicodedata
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .facebook_hub import connect, init_hub_db
 
@@ -46,6 +47,28 @@ h1{font-size:26px;line-height:1.3;margin:8px 0}h2{font:700 16px system-ui,sans-s
 .list a{font:600 17px system-ui,sans-serif;text-decoration:none;color:var(--text)}
 .products{border-top:1px solid var(--line);margin-top:28px}.products a{font:600 15px system-ui,sans-serif}
 """
+
+
+SLUG_ID_LENGTH = 10
+
+
+def slugify(title: str, max_length: int = 80) -> str:
+    """Vietnamese title -> ASCII slug: 'Đà Nẵng mở lễ hội' -> 'da-nang-mo-le-hoi'."""
+    text = (title or "").replace("Đ", "D").replace("đ", "d")
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch)).lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    if len(text) > max_length:
+        text = text[:max_length].rsplit("-", 1)[0]
+    return text or "bai-viet"
+
+
+def short_id(draft_id: str) -> str:
+    return draft_id.replace("-", "").lower()[:SLUG_ID_LENGTH]
+
+
+def article_path(draft_id: str, title: str) -> str:
+    return f"/site/a/{slugify(title)}-{short_id(draft_id)}"
 
 
 def _esc(value) -> str:
@@ -113,7 +136,7 @@ def _article_list(rows) -> str:
     if not rows:
         return '<p class="note">Chưa có bài viết.</p>'
     return "".join(
-        f'<div class="card list"><a href="/site/a/{_esc(r["id"])}">{_esc(r["title"])}</a>'
+        f'<div class="card list"><a href="{_esc(article_path(r["id"], r["title"]))}">{_esc(r["title"])}</a>'
         f'<div class="meta">{_esc(r["page_name"])} · {_esc((r["updated_at"] or "")[:10])}</div>'
         f'<div class="note">{_esc(_summary(public_body(r["body"])))}</div></div>'
         for r in rows)
@@ -176,17 +199,38 @@ def _products(conn, draft_id: str) -> list:
       WHERE draft_id=? AND enabled=1 ORDER BY created_at LIMIT 6""", (draft_id,)).fetchall()
 
 
-@router.get("/a/{draft_id}", response_class=HTMLResponse)
-def site_article(draft_id: str):
+PUBLIC_DRAFT_SQL = """
+  SELECT d.*, p.name AS page_name, p.id AS pid FROM fb_drafts d
+  JOIN fb_pages p ON p.id=d.page_id
+  WHERE d.review_status IN ('approved','published') AND p.enabled=1 AND {cond}"""
+
+
+def _find_public_draft(conn, key: str):
+    """Accept the canonical '<slug>-<short id>' path or a bare draft id (old links)."""
+    row = conn.execute(PUBLIC_DRAFT_SQL.format(cond="d.id=?"), (key,)).fetchone()
+    if row is not None:
+        return row
+    tail = key.lower().rsplit("-", 1)[-1]
+    if not re.fullmatch(r"[0-9a-z]{1,%d}" % SLUG_ID_LENGTH, tail):
+        return None
+    rows = conn.execute(
+        PUBLIC_DRAFT_SQL.format(cond="lower(substr(replace(d.id,'-',''),1,?))=?") + " LIMIT 2",
+        (SLUG_ID_LENGTH, tail)).fetchall()
+    return rows[0] if len(rows) == 1 else None
+
+
+@router.get("/a/{key}", response_class=HTMLResponse)
+def site_article(key: str):
     init_hub_db()
     with connect() as conn:
-        draft = conn.execute("""
-          SELECT d.*, p.name AS page_name, p.id AS pid FROM fb_drafts d
-          JOIN fb_pages p ON p.id=d.page_id
-          WHERE d.id=? AND d.review_status IN ('approved','published') AND p.enabled=1""",
-          (draft_id,)).fetchone()
+        draft = _find_public_draft(conn, key)
         if draft is None:
             raise HTTPException(404, "Bài viết không tồn tại hoặc chưa được duyệt.")
+        canonical = article_path(draft["id"], draft["title"])
+        if f"/site/a/{key}" != canonical:
+            # Old id links or an outdated slug after a title edit.
+            return RedirectResponse(canonical, status_code=301)
+        draft_id = draft["id"]
         sources = _original_sources(conn, draft)
         products = _products(conn, draft_id)
 

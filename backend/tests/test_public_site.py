@@ -120,3 +120,34 @@ def test_non_http_source_urls_are_not_linked(tmp_path, monkeypatch):
         page = client.get("/site/a/d1").text
         assert "javascript:" not in page
         assert "chưa có liên kết bài gốc" in page
+
+
+def test_readable_article_urls_and_old_links_redirect(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    main = load_hub_app(tmp_path, monkeypatch)
+    import app.facebook_hub as hub
+    from app import public_site as ps
+    assert ps.slugify("Đà Nẵng chuẩn bị lễ hội pháo hoa!") == "da-nang-chuan-bi-le-hoi-phao-hoa"
+    assert ps.slugify("???") == "bai-viet"
+    with TestClient(main.app) as client:
+        seed(hub)
+        long_id = "3f2a9c1b-7d4e-4a1b-9c2d-123456789abc"
+        with hub.connect() as conn:
+            conn.execute("UPDATE fb_drafts SET id=?, title=? WHERE id='d1'",
+                         (long_id, "Đà Nẵng chuẩn bị lễ hội pháo hoa"))
+        canonical = "/site/a/da-nang-chuan-bi-le-hoi-phao-hoa-3f2a9c1b7d"
+        assert ps.article_path(long_id, "Đà Nẵng chuẩn bị lễ hội pháo hoa") == canonical
+        assert client.get(canonical).status_code == 200
+        assert f'href="{canonical}"' in client.get("/site/").text
+
+        old = client.get(f"/site/a/{long_id}", follow_redirects=False)
+        assert old.status_code == 301 and old.headers["location"] == canonical
+        stale = client.get("/site/a/ten-cu-3f2a9c1b7d", follow_redirects=False)
+        assert stale.status_code == 301 and stale.headers["location"] == canonical
+        assert client.get("/site/a/da-nang-0000000000").status_code == 404
+
+        # Unapproved drafts stay hidden under every URL form.
+        with hub.connect() as conn:
+            conn.execute("UPDATE fb_drafts SET review_status='held'")
+        assert client.get(canonical, follow_redirects=False).status_code == 404
+        assert client.get(f"/site/a/{long_id}", follow_redirects=False).status_code == 404
