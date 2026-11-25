@@ -214,3 +214,63 @@ def test_meta_oauth_callback_rejects_state_from_another_browser(tmp_path, monkey
                                      params={"code": "code", "state": state})
     assert response.status_code == 400
 
+
+
+def test_approval_with_unsupported_evidence_requires_reviewer_note(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    main = load_hub_app(tmp_path, monkeypatch)
+    import app.facebook_hub as hub
+    from app import content_processor as cp
+    from app import evidence_checker as ec
+    headers = {"Authorization": "Bearer hub-test-key"}
+    with TestClient(main.app) as client:
+        with hub.connect() as conn:
+            stamp = hub.now()
+            conn.execute("INSERT INTO fb_pages(id,name,created_at,updated_at) VALUES(?,?,?,?)",
+                         ("p1", "Tin tức", stamp, stamp))
+            conn.execute("INSERT INTO fb_sources(id,name,url,source_type,created_at) VALUES(?,?,?,?,?)",
+                         ("s1", "Nguồn A", "https://s1.example/rss", "rss", stamp))
+            conn.execute("INSERT INTO fb_page_sources(page_id,source_id,created_at) VALUES(?,?,?)",
+                         ("p1", "s1", stamp))
+            conn.execute("""INSERT INTO fb_source_items
+              (id,source_id,item_key,title,item_url,summary,first_seen_at)
+              VALUES(?,?,?,?,?,?,?)""",
+              ("i1", "s1", "k1", "Sự kiện tại Đà Nẵng", "https://s1.example/i1",
+               "Ban tổ chức đang chuẩn bị chương trình.", stamp))
+        cp.process_item("i1")
+        with hub.connect() as conn:
+            draft_id = conn.execute("SELECT id FROM fb_drafts").fetchone()["id"]
+            conn.execute("UPDATE fb_drafts SET body=? WHERE id=?",
+                         ("Sự kiện diễn ra tại Quảng Nam với nhiều hoạt động.", draft_id))
+        assert ec.check_draft(draft_id)["status"] == "unsupported"
+
+        listing = client.get("/api/facebook-hub/drafts", headers=headers).json()["items"]
+        item = next(x for x in listing if x["id"] == draft_id)
+        assert item["evidence_unsupported"] >= 1
+        assert item["evidence_contradicted"] == 0
+
+        url = f"/api/facebook-hub/drafts/{draft_id}/review"
+        blocked = client.patch(url, headers=headers, json={"review_status": "approved"})
+        assert blocked.status_code == 409
+        assert "không có trong nguồn" in blocked.json()["detail"]
+        short = client.patch(url, headers=headers,
+                             json={"review_status": "approved", "review_reason": "ok"})
+        assert short.status_code == 409
+        with hub.connect() as conn:
+            assert conn.execute("SELECT review_status FROM fb_drafts WHERE id=?",
+                                (draft_id,)).fetchone()[0] != "approved"
+
+        # Holding or rejecting never needs a note.
+        assert client.patch(url, headers=headers, json={"review_status": "held"}).status_code == 200
+
+        ok = client.patch(url, headers=headers, json={
+            "review_status": "approved",
+            "review_reason": "Đã mở bài gốc, bài gốc ghi rõ địa điểm Quảng Nam.",
+        })
+        assert ok.status_code == 200
+        with hub.connect() as conn:
+            assert conn.execute("SELECT review_status FROM fb_drafts WHERE id=?",
+                                (draft_id,)).fetchone()[0] == "approved"
+            assert conn.execute(
+                "SELECT COUNT(*) FROM fb_activity WHERE action='draft.evidence_override'"
+            ).fetchone()[0] == 1

@@ -354,15 +354,46 @@ def list_drafts(review_status: str | None = None):
     allowed = {"pending", "approved", "held", "rejected", "published"}
     if review_status and review_status not in allowed:
         raise HTTPException(422, "Trạng thái lọc không hợp lệ.")
+    from .evidence_checker import ensure_evidence_schema
+
+    ensure_evidence_schema()
+    # Per-draft evidence counts so reviewers see risky drafts before opening them.
+    select = """SELECT d.*, p.name AS page_name,
+        (SELECT COUNT(*) FROM fb_evidence_claims c
+          WHERE c.draft_id=d.id AND c.status='unsupported') AS evidence_unsupported,
+        (SELECT COUNT(*) FROM fb_evidence_claims c
+          WHERE c.draft_id=d.id AND c.status='contradicted') AS evidence_contradicted,
+        (SELECT COUNT(*) FROM fb_evidence_claims c WHERE c.draft_id=d.id) AS evidence_claims
+      FROM fb_drafts d JOIN fb_pages p ON p.id=d.page_id"""
     with connect() as conn:
         if review_status:
-            rows = conn.execute("""SELECT d.*, p.name AS page_name FROM fb_drafts d
-              JOIN fb_pages p ON p.id=d.page_id WHERE d.review_status=?
-              ORDER BY d.created_at DESC LIMIT 200""", (review_status,)).fetchall()
+            rows = conn.execute(select + " WHERE d.review_status=? ORDER BY d.created_at DESC LIMIT 200",
+                                (review_status,)).fetchall()
         else:
-            rows = conn.execute("""SELECT d.*, p.name AS page_name FROM fb_drafts d
-              JOIN fb_pages p ON p.id=d.page_id ORDER BY d.created_at DESC LIMIT 200""").fetchall()
+            rows = conn.execute(select + " ORDER BY d.created_at DESC LIMIT 200").fetchall()
     return {"items": [dict(r) for r in rows]}
+
+
+# Approving a draft whose evidence ledger contains these statuses needs an
+# explicit reviewer note: the ledger flagged details that RSS text does not back.
+RISKY_EVIDENCE_STATUSES = ("unsupported", "contradicted")
+MIN_OVERRIDE_REASON_LENGTH = 15
+
+
+def risky_evidence_counts(conn: sqlite3.Connection, draft_id: str) -> dict[str, int]:
+    table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='fb_evidence_claims'"
+    ).fetchone()
+    counts = {status: 0 for status in RISKY_EVIDENCE_STATUSES}
+    if not table:
+        return counts
+    for row in conn.execute(
+        "SELECT status, COUNT(*) AS n FROM fb_evidence_claims "
+        "WHERE draft_id=? AND status IN (?,?) GROUP BY status",
+        (draft_id, *RISKY_EVIDENCE_STATUSES),
+    ):
+        counts[row["status"]] = row["n"]
+    return counts
 
 
 @router.patch("/drafts/{draft_id}/review", dependencies=[Depends(require_hub_key)])
@@ -376,6 +407,19 @@ def review_draft(draft_id: str, payload: DraftReview):
                                        draft["source_url"], exclude_draft_id=draft_id)
             if duplicate:
                 raise HTTPException(409, f"Bài có khả năng trùng với nội dung đã duyệt: {duplicate['title']}. {duplicate['reason']}")
+            risky = risky_evidence_counts(conn, draft_id)
+            if any(risky.values()):
+                note = (payload.review_reason or "").strip()
+                if len(note) < MIN_OVERRIDE_REASON_LENGTH:
+                    raise HTTPException(409, (
+                        f"Sổ bằng chứng có {risky['unsupported']} dữ kiện không có trong nguồn "
+                        f"và {risky['contradicted']} dữ kiện mâu thuẫn. Hãy mở bài gốc kiểm tra, "
+                        "sửa bài hoặc ghi rõ lý do duyệt (tối thiểu "
+                        f"{MIN_OVERRIDE_REASON_LENGTH} ký tự)."
+                    ))
+                log(conn, "draft.evidence_override",
+                    f"{draft_id}: unsupported={risky['unsupported']}, "
+                    f"contradicted={risky['contradicted']}; note={note[:300]}")
         conn.execute("UPDATE fb_drafts SET review_status=?, review_reason=?, updated_at=? WHERE id=?",
                      (payload.review_status, payload.review_reason, now(), draft_id))
         if payload.review_status == "approved":
