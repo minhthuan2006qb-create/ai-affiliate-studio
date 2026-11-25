@@ -201,3 +201,49 @@ def test_title_and_body_do_not_merge_into_one_place():
     claims = ec.extract_semantic_risk_claims("Lễ hội pháo hoa tại Đà Nẵng\nMột số nguồn đưa tin.")
     places = {normalized for kind, _, normalized in claims if kind == "place"}
     assert places == {"đà nẵng"}
+
+
+def test_extracts_wording_cues_conservatively():
+    cues = ec.extract_wording_cues(
+        "Giá xăng tăng do đó nhiều người lo lắng. Ông A cho biết sẽ có thay đổi. "
+        "Lượng khách dự kiến tăng mạnh."
+    )
+    kinds = {(kind, phrase) for kind, phrase, _ in cues}
+    assert ("cue_cause", "do đó") in kinds
+    assert ("cue_attribution", "cho biết") in kinds
+    assert ("cue_forecast", "dự kiến") in kinds
+    # Plain words that merely contain a cue as a substring are not cues.
+    assert ec.extract_wording_cues("Lễ hội pháo hoa diễn ra ở Đà Nẵng.") == []
+    assert ec.extract_wording_cues("Nhóm nhằmxyz không phải từ khóa.") == []
+
+
+def test_wording_cue_absent_from_source_needs_review_but_not_unsupported(tmp_path, monkeypatch):
+    path = tmp_path / "hub.sqlite3"
+    monkeypatch.setattr(hub, "DB_PATH", path)
+    seed(path)
+    add_item("i1", "s1", "Đà Nẵng tổ chức lễ hội pháo hoa",
+             "Ban tổ chức cho biết chương trình đang được chuẩn bị.")
+    cp.process_item("i1")
+    with hub.connect() as conn:
+        draft_id = conn.execute("SELECT id FROM fb_drafts").fetchone()["id"]
+        conn.execute("UPDATE fb_drafts SET title=?, body=? WHERE id=?", (
+            "Lễ hội pháo hoa",
+            "Ban tổ chức cho biết chương trình đang được chuẩn bị. "
+            "Lễ hội được tổ chức nhằm thu hút khách du lịch và dự kiến rất đông người.\n\n"
+            "Nguồn tham khảo (liên kết gốc):\n- Nguồn A: https://s1.example/i1\n\n"
+            "Lưu ý: Bản viết lại bằng AI từ trích yếu RSS; chưa được xác minh độc lập.",
+            draft_id))
+    result = ec.check_draft(draft_id)
+    assert result["counts"]["needs_review"] == 2
+    assert result["counts"]["unsupported"] == 0
+    assert result["status"] == "insufficient"
+    with hub.connect() as conn:
+        rows = {(r["claim_type"], r["normalized_value"]): r for r in conn.execute(
+            "SELECT * FROM fb_evidence_claims WHERE draft_id=? AND status='needs_review'",
+            (draft_id,))}
+    # "cho biết" appears in the source, so it is not flagged.
+    assert set(rows) == {("cue_cause", "nhằm"), ("cue_forecast", "dự kiến")}
+    assert "nhằm thu hút" in rows[("cue_cause", "nhằm")]["claim_text"]
+    assert "không phải kết luận" in rows[("cue_cause", "nhằm")]["rationale"]
+    # Re-running does not duplicate rows.
+    assert ec.check_draft(draft_id)["counts"]["needs_review"] == 2

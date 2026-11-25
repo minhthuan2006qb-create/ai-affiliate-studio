@@ -95,6 +95,47 @@ PLACE_PATTERN = re.compile(
 QUOTE_PATTERN = re.compile(r"[“\"']([^”\"']{12,240})[”\"']")
 
 
+# Conservative wording cues. A cue is only flagged when the draft uses it and
+# none of the collected RSS titles/summaries use the same phrase: the rewrite
+# may have added a cause, a prediction or a quote attribution that the source
+# did not state. This is a prompt for human review, never a verdict.
+WORDING_CUES: dict[str, tuple[str, ...]] = {
+    "cue_cause": ("nguyên nhân", "bởi vì", "do đó", "vì vậy", "vì thế", "dẫn đến", "dẫn tới",
+                  "khiến cho", "nhằm mục đích", "với mục đích", "nhằm"),
+    "cue_forecast": ("dự báo", "dự kiến", "nhiều khả năng", "có khả năng", "trong thời gian tới",
+                     "sắp tới", "được kỳ vọng"),
+    "cue_attribution": ("cho biết", "khẳng định", "nhấn mạnh", "tuyên bố", "phát biểu",
+                        "thừa nhận", "nói rằng", "chia sẻ rằng", "theo ông", "theo bà"),
+}
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])\s+|\n+")
+
+
+def _cue_regex(phrase: str) -> re.Pattern[str]:
+    return re.compile(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", re.I)
+
+
+_CUE_REGEXES = {kind: [(phrase, _cue_regex(phrase)) for phrase in phrases]
+                for kind, phrases in WORDING_CUES.items()}
+
+
+def extract_wording_cues(text: str) -> list[tuple[str, str, str]]:
+    """Return (claim_type, cue phrase, sentence) once per cue phrase."""
+    found: dict[tuple[str, str], str] = {}
+    for sentence in _SENTENCE_SPLIT.split(text or ""):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        for kind, regexes in _CUE_REGEXES.items():
+            for phrase, regex in regexes:
+                if regex.search(sentence) and (kind, phrase) not in found:
+                    found[(kind, phrase)] = sentence[:300]
+    return [(kind, phrase, sentence) for (kind, phrase), sentence in found.items()]
+
+
+def source_has_phrase(source_text: str, phrase: str) -> bool:
+    return _cue_regex(phrase).search(source_text) is not None
+
+
 def extract_semantic_risk_claims(text: str) -> list[tuple[str, str, str]]:
     found: dict[tuple[str, str], str] = {}
     for kind, pattern in (("person", PERSON_PATTERN), ("place", PLACE_PATTERN),
@@ -241,6 +282,31 @@ def check_draft(draft_id: str) -> dict[str, object]:
                               "status": "unsupported", "supporting_groups": 0,
                               "source_count": 0})
 
+        # Wording cues (cause/purpose, forecast, attribution) the sources do not use.
+        from .public_site import public_body
+        draft_text = "\n".join((draft["title"] or "", public_body(draft["body"] or "")))
+        for claim_type, phrase, sentence in extract_wording_cues(draft_text):
+            if source_has_phrase(source_text, phrase):
+                continue
+            claim_id = hashlib.sha256(
+                ("claim:" + draft_id + ":" + claim_type + ":" + phrase).encode()
+            ).hexdigest()
+            rationale = (
+                f"Bản viết dùng cụm “{phrase}” nhưng tiêu đề/trích yếu RSS không có cụm này. "
+                "Có thể bài viết đã thêm nguyên nhân, dự báo hoặc gán lời phát biểu; "
+                "hãy đối chiếu với bài gốc. Đây là cảnh báo, không phải kết luận nội dung sai."
+            )
+            conn.execute(
+                "INSERT INTO fb_evidence_claims "
+                "(id,draft_id,claim_type,claim_text,normalized_value,status,"
+                "supporting_groups,source_count,rationale,checked_at) "
+                "VALUES(?,?,?,?,?,'needs_review',0,0,?,?)",
+                (claim_id, draft_id, claim_type, sentence, phrase, rationale, checked_at),
+            )
+            summaries.append({"claim_type": claim_type, "value": sentence,
+                              "status": "needs_review", "supporting_groups": 0,
+                              "source_count": 0})
+
         # Compare explicit factual tokens in the AI draft with source metadata.
         for claim_type, value, normalized in extract_claims(draft["title"], draft["body"]):
             if (claim_type, normalized) in observations:
@@ -266,7 +332,8 @@ def check_draft(draft_id: str) -> dict[str, object]:
         # The checker records evidence but never approves a draft. RSS excerpts
         # cannot prove that every claim in an AI-rewritten body is accurate.
         status_counts = {status: sum(1 for item in summaries if item["status"] == status)
-                         for status in ("supported", "contradicted", "insufficient", "unverified", "unsupported")}
+                         for status in ("supported", "contradicted", "insufficient", "unverified", "unsupported",
+                                        "needs_review")}
         overall = "insufficient" if not summaries else (
             "contradicted" if status_counts["contradicted"] else
             "unsupported" if status_counts["unsupported"] else
@@ -276,7 +343,8 @@ def check_draft(draft_id: str) -> dict[str, object]:
             f"Evidence Checker: {len(summaries)} dữ kiện; "
             f"supported={status_counts['supported']}, contradicted={status_counts['contradicted']}, "
             f"insufficient={status_counts['insufficient']}, unverified={status_counts['unverified']}, "
-            f"unsupported={status_counts['unsupported']}. "
+            f"unsupported={status_counts['unsupported']}, "
+            f"needs_review={status_counts['needs_review']}. "
             "Đã lưu sổ bằng chứng; chưa xác minh toàn văn nguồn gốc và chưa được tự động xuất bản."
         )
         conn.execute("""

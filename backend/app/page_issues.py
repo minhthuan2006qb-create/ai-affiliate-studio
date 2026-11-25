@@ -95,8 +95,9 @@ def collect_issues(page_id: str | None = None) -> list[dict]:
         has_evidence = _table_exists(conn, "fb_evidence_claims")
         evidence_sql = """,
             (SELECT COUNT(*) FROM fb_evidence_claims c WHERE c.draft_id=d.id AND c.status='unsupported') AS unsupported,
-            (SELECT COUNT(*) FROM fb_evidence_claims c WHERE c.draft_id=d.id AND c.status='contradicted') AS contradicted
-        """ if has_evidence else ", 0 AS unsupported, 0 AS contradicted"
+            (SELECT COUNT(*) FROM fb_evidence_claims c WHERE c.draft_id=d.id AND c.status='contradicted') AS contradicted,
+            (SELECT COUNT(*) FROM fb_evidence_claims c WHERE c.draft_id=d.id AND c.status='needs_review') AS needs_review
+        """ if has_evidence else ", 0 AS unsupported, 0 AS contradicted, 0 AS needs_review"
         drafts = conn.execute(f"""
           SELECT d.id, d.page_id, d.title, d.review_status, d.review_reason, d.updated_at {evidence_sql}
           FROM fb_drafts d
@@ -114,6 +115,12 @@ def collect_issues(page_id: str | None = None) -> list[dict]:
                     f"Bài có chi tiết không có trong nguồn: {d['title']}",
                     f"{d['unsupported']} tên/địa điểm/trích dẫn/số liệu không tìm thấy trong "
                     "dữ liệu RSS; có thể do AI tự thêm.", "draft", d["id"], d["updated_at"]))
+            elif d["needs_review"]:
+                issues.append(_issue(page, "content", "info",
+                    f"Bài cần đối chiếu cách diễn đạt: {d['title']}",
+                    f"{d['needs_review']} cụm nguyên nhân/dự báo/lời phát biểu không có trong "
+                    "trích yếu RSS. Đối chiếu với bài gốc trước khi duyệt.",
+                    "draft", d["id"], d["updated_at"]))
             elif d["review_status"] == "held":
                 issues.append(_issue(page, "content", "info",
                     f"Bài đang giữ lại: {d['title']}",

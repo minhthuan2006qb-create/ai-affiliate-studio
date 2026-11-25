@@ -363,6 +363,8 @@ def list_drafts(review_status: str | None = None):
           WHERE c.draft_id=d.id AND c.status='unsupported') AS evidence_unsupported,
         (SELECT COUNT(*) FROM fb_evidence_claims c
           WHERE c.draft_id=d.id AND c.status='contradicted') AS evidence_contradicted,
+        (SELECT COUNT(*) FROM fb_evidence_claims c
+          WHERE c.draft_id=d.id AND c.status='needs_review') AS evidence_needs_review,
         (SELECT COUNT(*) FROM fb_evidence_claims c WHERE c.draft_id=d.id) AS evidence_claims
       FROM fb_drafts d JOIN fb_pages p ON p.id=d.page_id"""
     with connect() as conn:
@@ -462,9 +464,10 @@ def get_draft_evidence(draft_id: str):
           ORDER BY CASE status
             WHEN 'contradicted' THEN 0
             WHEN 'unsupported' THEN 1
-            WHEN 'insufficient' THEN 2
-            WHEN 'unverified' THEN 3
-            WHEN 'supported' THEN 4 ELSE 5 END, claim_type, normalized_value
+            WHEN 'needs_review' THEN 2
+            WHEN 'insufficient' THEN 3
+            WHEN 'unverified' THEN 4
+            WHEN 'supported' THEN 5 ELSE 6 END, claim_type, normalized_value
         """, (draft_id,)).fetchall()
         result = []
         for claim in claims:
