@@ -134,6 +134,24 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "ai-affiliate-studio-api", "version": "0.1.0"}
 
 
+HUB_ADMIN_PAGE = Path(os.getenv("HUB_ADMIN_PAGE", str(APP_DIR.parents[1] / "facebook-hub.html")))
+
+
+@app.get("/hub", include_in_schema=False)
+def hub_admin_page() -> FileResponse:
+    """Serve the Hub admin page from the API's own origin (no CORS setup needed).
+
+    The page holds no secrets; every API call still requires the Hub API key.
+    """
+    if not HUB_ADMIN_PAGE.is_file():
+        raise HTTPException(status_code=404, detail="Hub admin page is not installed.")
+    response = FileResponse(HUB_ADMIN_PAGE, media_type="text/html")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 @app.post("/v1/jobs", response_model=JobAccepted, status_code=status.HTTP_202_ACCEPTED)
 def create_job(payload: CreateVideoJob, _: None = Depends(require_api_key)) -> JobAccepted:
     job_id = str(uuid.uuid4())

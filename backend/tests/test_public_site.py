@@ -186,3 +186,14 @@ def test_privacy_and_data_deletion_pages(tmp_path, monkeypatch):
         monkeypatch.delenv("PUBLIC_CONTACT_EMAIL")
         importlib.reload(ps)
         importlib.reload(main)
+
+
+def test_hub_admin_page_is_served_from_backend(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    main = load_hub_app(tmp_path, monkeypatch)
+    with TestClient(main.app) as client:
+        res = client.get("/hub")
+        assert res.status_code == 200
+        assert "Facebook Hub" in res.text and res.headers["x-frame-options"] == "DENY"
+        # The page itself is public, but the API behind it still needs the key.
+        assert client.get("/api/facebook-hub/dashboard").status_code == 401

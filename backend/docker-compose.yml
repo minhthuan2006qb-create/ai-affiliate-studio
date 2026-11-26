@@ -12,9 +12,11 @@ services:
       DATABASE_PATH: /app/data/jobs.sqlite3
       FACEBOOK_HUB_DB: /app/data/hub.sqlite3
       OUTPUT_DIR: /app/output
+      HUB_ADMIN_PAGE: /app/facebook-hub.html
     volumes:
       - ./data:/app/data
       - ./output:/app/output
+      - ../facebook-hub.html:/app/facebook-hub.html:ro
     ports:
       - "127.0.0.1:8000:8000"
     restart: unless-stopped

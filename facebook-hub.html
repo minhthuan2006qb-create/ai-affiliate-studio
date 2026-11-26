@@ -54,6 +54,8 @@ textarea{min-height:100px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:1
 <script>
 const $=id=>document.getElementById(id);let pages=[],sources=[],approvedDrafts=[];
 function base(){return $('api').value.trim().replace(/\/+$/,'')}
+// When the page is served by the backend itself (/hub), default to that origin.
+if(location.pathname.replace(/\/+$/,'').endsWith('/hub')&&!$('api').value.trim())$('api').value=location.origin;
 function headers(){return {'Authorization':'Bearer '+$('key').value.trim(),'Content-Type':'application/json'}}
 async function request(path,opts={}){if(!base()||!$('key').value.trim())throw Error('Nhập API URL và API key trước.');const r=await fetch(base()+path,{...opts,headers:{...headers(),...(opts.headers||{})}});let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.detail||'API error '+r.status);return d}
 function msg(t,bad=false){$('message').textContent=t;$('message').style.color=bad?'#ff9c9c':'#9fb0c7'}
