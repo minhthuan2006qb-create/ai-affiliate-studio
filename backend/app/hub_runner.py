@@ -79,12 +79,16 @@ def _publish_cycle() -> str:
 
 
 def _token_cycle() -> str:
+    from .facebook_meta import init_meta_oauth_db
     from .facebook_token_health import check_all_tokens, init_token_health_db
     if not os.getenv("META_TOKEN_ENCRYPTION_KEY", "").strip():
         return "skipped (Meta is not configured)"
+    init_meta_oauth_db()
     init_token_health_db()
-    results = check_all_tokens()
-    return f"pages={len(results)} " + ",".join(r["health_status"] for r in results)
+    result = check_all_tokens()  # {"checked": n, "pages": [...]}
+    pages = result.get("pages", [])
+    return f"pages={result.get('checked', len(pages))} " + ",".join(
+        str(p.get("health_status", "")) for p in pages)
 
 
 def _automation_cycle() -> str:
